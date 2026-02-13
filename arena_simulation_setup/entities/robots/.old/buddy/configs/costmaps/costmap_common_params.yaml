@@ -1,0 +1,64 @@
+2d_obstacles_layer:
+  helios:
+    clearing: true
+    data_type: LaserScan
+    marking: true
+    sensor_frame: $(arg frame)helios_lidar
+    topic: $(arg namespace)/helios_points
+  observation_sources: helios
+3d_obstacles_layer:
+  front_rgbd:
+    clearing: true
+    data_type: PointCloud2
+    marking: true
+    min_obstacle_height: 0.01
+    sensor_frame: $(arg frame)front_rgbd_reference_frame
+    topic: $(arg namespace)/front_rgbd/front_rgbd/depth/points
+  helios_lidar:
+    clearing: true
+    data_type: PointCloud2
+    marking: true
+    min_obstacle_height: 0.05
+    sensor_frame: $(arg frame)helios_lidar
+    topic: $(arg namespace)/helios_points
+  observation_sources: front_rgbd rear_rgbd rear_left_rgbd rear_right_rgbd
+  rear_left_rgbd:
+    clearing: true
+    data_type: PointCloud2
+    marking: true
+    min_obstacle_height: 0.01
+    sensor_frame: $(arg frame)rear_left_rgbd_reference_frame
+    topic: $(arg namespace)/rear_left_rgbd/rear_left_rgbd/depth/points
+  rear_rgbd:
+    clearing: true
+    data_type: PointCloud2
+    marking: true
+    min_obstacle_height: 0.01
+    sensor_frame: $(arg frame)rear_rgbd_reference_frame
+    topic: $(arg namespace)/rear_rgbd/rear_rgbd/depth/points
+  rear_right_rgbd:
+    clearing: true
+    data_type: PointCloud2
+    marking: true
+    min_obstacle_height: 0.01
+    sensor_frame: $(arg frame)rear_right_rgbd_reference_frame
+    topic: $(arg namespace)/rear_right_rgbd/rear_right_rgbd/depth/points
+footprint:
+- - -0.55
+  - -0.275
+- - -0.55
+  - 0.275
+- - 0.55
+  - 0.275
+- - 0.55
+  - -0.275
+inflation_layer:
+  cost_scaling_factor: 5.0
+  inflation_radius: 2.0
+obstacle_range: 10.0
+raytrace_range: 15.0
+robot_base_frame: $(arg frame)base_link
+robot_radius: 0.615
+static_map_layer:
+  map_topic: map
+  subscribe_to_updates: true

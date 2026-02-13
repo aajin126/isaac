@@ -1,0 +1,313 @@
+/******************************************************************************
+ *     Copyright 2023 NVIDIA Corporation. All rights reserved.
+ ******************************************************************************
+ 
+Permission is hereby granted by NVIDIA Corporation ("NVIDIA"), free of charge,
+to any person obtaining a copy of the sample definition code that uses our 
+Material Definition Language (the "MDL Materials"), to reproduce and distribute
+the MDL Materials, including without limitation the rights to use, copy, merge,
+publish, distribute, and sell modified and unmodified copies of the MDL 
+Materials, and to permit persons to whom the MDL Materials is furnished to do
+so, in all cases solely for use with NVIDIA's Material Definition Language,
+subject to the following further conditions:
+
+1. The above copyright notices, this list of conditions, and the disclaimer
+that follows shall be retained in all copies of one or more of the MDL
+Materials, including in any software with which the MDL Materials are bundled,
+redistributed, and/or sold, and included either as stand-alone text files,
+human-readable headers or in the appropriate machine-readable metadata fields
+within text or binary files as long as those fields can be easily viewed by the
+user, as applicable.
+2. The name of NVIDIA shall not be used to promote, endorse or advertise any 
+Modified Version without specific prior written permission, except a) to comply
+ with the notice requirements otherwise contained herein; or b) to acknowledge
+the contribution(s) of NVIDIA.
+
+THE MDL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE FOR 
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, 
+INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR INABILITY TO USE
+THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.
+*/
+
+
+mdl 1.5;
+
+import ::tex::*;
+import ::anno::*;
+import ::base::*;
+import ::df::*;
+import ::math::*;
+import ::state::*;
+import ::nvidia::core_definitions::blend_colors;
+import ::nvidia::core_definitions::dimension;
+
+
+const string COPYRIGHT = 
+" Copyright 2023 NVIDIA Corporation. All rights reserved.\n"
+" MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,\n"
+" WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR,\n" 
+" THE MDL MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n"
+" EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF\n"
+" MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\n" 
+" COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA\n"
+" CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY\n"
+" GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN\n"
+" AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR\n"
+" INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.\n";
+
+
+const string DESCRITPION = 
+"A plaster wall material with optional cracks and weathering effect";
+
+
+float remap(float input, float low_1, float high_1, float low_2, float high_2)
+{
+	return low_2 + ((input - low_1) * (high_2 - low_2))/(high_1 - low_1);
+}
+
+
+
+float histogram_scan_small(float input, float width, float position)
+{	
+	return ::math::clamp(
+				remap(input,
+					::math::lerp(0.0, 1.0 - width, position),
+					::math::lerp(width, 1.0 , position),
+					0.0,
+					1.0),
+				0.0,
+				1.0);
+}
+
+float3 transform_internal_to_tangent(float3 n)
+[[ 
+	::anno::hidden() 
+]]
+{
+    return
+        n.x* float3(::state::texture_tangent_u(0).x,::state::texture_tangent_v(0).x,::state::normal().x)+
+        n.y* float3(::state::texture_tangent_u(0).y,::state::texture_tangent_v(0).y,::state::normal().y)+
+        n.z* float3(::state::texture_tangent_u(0).z,::state::texture_tangent_v(0).z,::state::normal().z);
+}
+
+// Returns the normal n in internal space, given n is in tangent space.
+float3 transform_tangent_to_internal(float3 n)
+[[ 
+	::anno::hidden() 
+]]
+{
+    return  ::state::texture_tangent_u(0) * n.x +
+            ::state::texture_tangent_v(0) * n.y +
+            ::state::normal() * n.z ;
+}
+
+float3 add_detail_normal(float3 nd = ::state::normal(), float3 n = ::state::normal())
+{
+    // http://blog.selfshadow.com/publications/blending-in-detail/
+    float3 n_t = transform_internal_to_tangent(n);
+    float3 nd_t = transform_internal_to_tangent(nd);
+
+    n_t=n_t + float3(0.,0.,1.);
+    nd_t = nd_t *  float3(-1.,-1.,1.);
+
+    n = n_t*::math::dot(n_t, nd_t)/n_t.z - nd_t;
+    return ::math::normalize(transform_tangent_to_internal(n));
+}
+
+
+float3 normalmap_normal(
+	uniform texture_2d texture,
+	float factor = 1.0,
+	::base::texture_coordinate_info uvw = ::base::texture_coordinate_info()
+)
+{
+	float3 lookup = (::tex::lookup_float3(texture, float2(uvw.position.x, uvw.position.y)) - 0.5) * (factor * 2.0);
+	return ::math::normalize(uvw.tangent_u * lookup.x + uvw.tangent_v * lookup.y + ::state::normal());
+}
+
+::base::texture_coordinate_info vmat_transform(
+								uniform float2 translation = float2(0.0, 0.0),
+								uniform float rotation     = 0.0,
+								uniform float2 scaling     = float2(1.0, 1.0),
+								uniform ::base::texture_coordinate_system system = ::base::texture_coordinate_uvw,
+								uniform int uv_space       = 0
+)
+{
+	float rotation_rad = (rotation * 3.1415926535897932384626433832f) / 180.f;
+	
+	float4x4 scale =
+	float4x4(1.0 /scaling.x, 0.             ,  0. ,     0.,
+			 0.            , 1.0 /scaling.y ,  0. ,     0.,
+			 0.            , 0.             ,  1.0,     0.,
+			 translation.x , translation.y  ,  0.0,     1.);
+
+    float s = ::math::sin(rotation_rad);
+    float c = ::math::cos(rotation_rad);
+    float4x4 rotate =
+	float4x4(  c  ,  -s   , 0.0 , 0.0,
+			   s  ,   c   , 0.0 , 0.0,
+			   0.0,   0.0 , 1.0 , 0.0,
+			   0. ,   0.0 , 0.0 , 1.);
+	
+	return ::base::transform_coordinate(scale*rotate, ::base::coordinate_source(system, uv_space));
+}
+
+
+
+export material Plaster_Wall(
+    color diffuse_tint = color(0.973f, 0.815f, 0.697f) [[
+        ::anno::description("Adjusts the color of the plaster wall"),
+        ::anno::display_name("Plaster Color"),
+        ::anno::in_group("Appearance", "Wall")
+    ]],
+    float diffuse_brightness = 0.5f [[
+        ::anno::description("Adjusts the diffuse brightness of the plaster wall"),
+        ::anno::display_name("Plaster Brightness"),
+		::anno::hard_range(0.0f, 1.0f),
+        ::anno::in_group("Appearance", "Wall")
+    ]],
+    float roughness = 0.5f [[
+        ::anno::description("Adjusts the roughness of the wall. Lower values make the wall more reflective"),
+        ::anno::display_name("Plaster Roughness"),
+		::anno::hard_range(0.0f, 1.0f),
+        ::anno::in_group("Appearance", "Wall")
+    ]],
+    float wall_weathering = 0.f [[
+        ::anno::description("Adds a dirty grunge on top of the wall to create a weathered appearance"),
+        ::anno::display_name("Wall Weathering"),
+		::anno::hard_range(0.0f, 1.0f),
+        ::anno::in_group("Appearance", "Wall")
+    ]],
+    float crack_darkening_weight = 0.0 [[
+        ::anno::description("Darkens the plaster around the cracks"),
+        ::anno::display_name("Cracks Darkness"),
+		::anno::hard_range(0.0f, 1.0f),
+        ::anno::in_group("Appearance", "Cracks")
+    ]],
+    uniform float cracks_bump_factor = 0.f [[
+        ::anno::description("Determines the degree of bumpiness of the cracks"),
+        ::anno::display_name("Cracks Bump Factor"),
+		::anno::hard_range(0.0f, 1.0f),
+        ::anno::in_group("Appearance", "Cracks")
+    ]],
+    uniform float2 texture_translate = float2(0.f, 0.f) [[
+        ::anno::description("Controls the position of the texture."),
+        ::anno::display_name("Translate"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate = 0.f [[
+        ::anno::description("Controls the rotation of the texture."),
+        ::anno::display_name("Rotate"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale = float2(1.f) [[
+        ::anno::description("Larger numbers increases the texture size."),
+        ::anno::display_name("Scale"),
+		::nvidia::core_definitions::dimension(float2(.8f, .8f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform int uv_space_index = 0 [[
+        ::anno::description("Use selected UV space for material"),
+        ::anno::display_name("UV Space Index"),
+        ::anno::in_group("Advanced")
+    ]]
+)
+[[
+	::anno::author("NVIDIA vMaterials"),
+    ::anno::display_name("Plaster Wall - New"),
+    ::anno::description(DESCRITPION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Plaster_Wall.Plaster_Wall.png"),
+	::anno::key_words(string[]("aec", "plaster", "wall", "construction", "exterior", "interior", "rough", "weathered", "worn", "light", "white" ))
+]]
+ = 
+    let {
+        bool tmp0 = false;
+        material_surface tmp1(
+            ::df::custom_curve_layer(0.f, 1.f, 5.f, histogram_scan_small(::math::pow(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 2.20000005f), 0.74000001f, 0.864000022f), ::df::microfacet_ggx_smith_bsdf(::math::lerp(remap(::math::lerp(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[1], float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 0.502000034f), 0.f, 1.f, ::math::lerp(0.297000021f, 0.728000045f, roughness), ::math::lerp(0.74000001f, 0.817000031f, roughness)), remap(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2], 0.f, 1.f, 0.975000024f, 0.697000027f), wall_weathering * 0.600000024f) * ::math::lerp(remap(::math::lerp(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[1], float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 0.502000034f), 0.f, 1.f, ::math::lerp(0.297000021f, 0.728000045f, roughness), ::math::lerp(0.74000001f, 0.817000031f, roughness)), remap(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2], 0.f, 1.f, 0.975000024f, 0.697000027f), wall_weathering * 0.600000024f), ::math::lerp(remap(::math::lerp(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[1], float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 0.502000034f), 0.f, 1.f, ::math::lerp(0.297000021f, 0.728000045f, roughness), ::math::lerp(0.74000001f, 0.817000031f, roughness)), remap(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2], 0.f, 1.f, 0.975000024f, 0.697000027f), wall_weathering * 0.600000024f) * ::math::lerp(remap(::math::lerp(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[1], float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 0.502000034f), 0.f, 1.f, ::math::lerp(0.297000021f, 0.728000045f, roughness), ::math::lerp(0.74000001f, 0.817000031f, roughness)), remap(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2], 0.f, 1.f, 0.975000024f, 0.697000027f), wall_weathering * 0.600000024f), color(1.f, 1.f, 1.f), ::state::texture_tangent_u(0), ::df::scatter_reflect, ""), ::df::diffuse_reflection_bsdf(::nvidia::core_definitions::blend_colors(::nvidia::core_definitions::blend_colors(::nvidia::core_definitions::blend_colors(::nvidia::core_definitions::blend_colors(color(0.f, 0.f, 0.f), ::nvidia::core_definitions::blend_colors(diffuse_tint, color(::math::pow(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2], 1.74600005f)), ::base::color_layer_multiply, 1.f).tint, ::base::color_layer_blend, ::math::lerp(0.601000011f, 1.f, diffuse_brightness)).tint, color(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[2]), ::base::color_layer_overlay, ::math::lerp(0.f, 0.550000012f, wall_weathering)).tint, color(::math::pow(float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_ao_g_grunge_b_diff.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[0], 2.20000005f)), ::base::color_layer_multiply, 0.503000021f).tint, color(0.367246985f, 0.367246985f, 0.367246985f), ::base::color_layer_multiply, float3(::base::file_texture(texture_2d("./textures/plaster_wall_multi_r_rough_g_cracksmask_b_grunge2.jpg", ::tex::gamma_linear), color(0.f, 0.f, 0.f), color(1.f, 1.f, 1.f), ::base::mono_alpha, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), float2(0.f, 1.f), float2(0.f, 1.f), ::tex::wrap_repeat, ::tex::wrap_repeat, false).tint)[1] * (crack_darkening_weight * 0.600000024f)).tint, 0.f, ""), ::state::normal()),
+            material_emission(emission: edf(), intensity: color(0.f, 0.f, 0.f), mode: intensity_radiant_exitance));
+        material_surface tmp2 = material_surface(scattering: bsdf(), emission: material_emission(emission: edf(), intensity: color(0.f, 0.f, 0.f), mode: intensity_radiant_exitance));
+        color tmp3 = color(1.f, 1.f, 1.f);
+        material_volume tmp4 = material_volume(scattering: vdf(), absorption_coefficient: color(0.f, 0.f, 0.f), scattering_coefficient: color(0.f, 0.f, 0.f));
+        material_geometry tmp5(
+            float3(0.f),
+            1.f,
+            add_detail_normal(normalmap_normal(texture_2d("./textures/plaster_wall_cracks_norm.jpg", ::tex::gamma_linear), cracks_bump_factor, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index)), normalmap_normal(texture_2d("./textures/plaster_wall_norm.jpg", ::tex::gamma_linear), 0.55400002f, vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index))));
+
+    } in
+        material(
+            thin_walled: tmp0,
+            surface: tmp1,
+            backface: tmp2,
+            ior: tmp3,
+            volume: tmp4,
+            geometry: tmp5);
+
+
+export material Plaster_Wall_Slightly_Cracked(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+    ::anno::display_name("Plaster Wall - Slightly Cracked"),
+    ::anno::description(DESCRITPION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Plaster_Wall.Plaster_Wall_Slightly_Cracked.png"),
+	::anno::key_words(string[]("aec", "plaster", "wall", "construction", "exterior", "interior", "rough", "weathered", "worn", "cracked", "cracks", "light", "white" ))
+]] = Plaster_Wall(
+	diffuse_tint:			color(0.973f, 0.815f, 0.697f),
+	diffuse_brightness:		0.473f,
+	roughness:				0.4f,
+	wall_weathering:		0.35f,
+	crack_darkening_weight: 0.322f,
+	cracks_bump_factor:		0.25f,
+	texture_translate:		float2(0.0f),
+	texture_rotate:			0.0f,
+	texture_scale: 			float2(1.0f),
+	uv_space_index:			0
+);
+
+export material Plaster_Wall_Cracked(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+    ::anno::display_name("Plaster Wall - Cracked"),
+    ::anno::description(DESCRITPION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Plaster_Wall.Plaster_Wall_Cracked.png"),
+	::anno::key_words(string[]("aec", "plaster", "wall", "construction", "exterior", "interior", "rough", "weathered", "worn", "cracked", "cracks", "light", "white" ))
+]] = Plaster_Wall(
+	diffuse_tint:			color(0.973f, 0.815f, 0.697f),
+	diffuse_brightness:		0.473f,
+	roughness:				0.7f,
+	wall_weathering:		0.35f,
+	crack_darkening_weight: 1.0f,
+	cracks_bump_factor:		0.83f,
+	texture_translate:		float2(0.0f),
+	texture_rotate:			0.0f,
+	texture_scale: 			float2(1.0f),
+	uv_space_index:			0
+);
+
+export material Plaster_Wall_Weathered(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+    ::anno::display_name("Plaster Wall - Weathered"),
+    ::anno::description(DESCRITPION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Plaster_Wall.Plaster_Wall_Weathered.png"),
+	::anno::key_words(string[]("aec", "plaster", "wall", "construction", "exterior", "interior", "rough", "weathered", "old", "worn", "light", "white" ))
+]] = Plaster_Wall(
+	diffuse_tint:			color(0.973f, 0.815f, 0.697f),
+	diffuse_brightness:		0.23,
+	roughness:				0.7f,
+	wall_weathering:		1.0f,
+	crack_darkening_weight: 0.215f,
+	cracks_bump_factor:		0.2f,
+	texture_translate:		float2(0.0f),
+	texture_rotate:			0.0f,
+	texture_scale: 			float2(1.0f),
+	uv_space_index:			0
+);
+

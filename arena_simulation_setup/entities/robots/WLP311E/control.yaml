@@ -1,0 +1,46 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50            # Hz
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+wlp311e_velocity_controller:       # ← 名字改了
+      type: diff_drive_controller/DiffDriveController
+wlp311e_velocity_controller:
+  ros__parameters:
+    # 轮子关节来自 WLP311D.urdf.xacro：
+    left_wheel_names:  [ "LF_WHL", "LH_WHL" ]
+    right_wheel_names: [ "RF_WHL", "RH_WHL" ]
+
+    wheel_separation: 0.60      # FIXME: 左右轮中心距 (m)
+    wheels_per_side: 1
+    wheel_radius: 0.15          # FIXME: 轮子半径 (m)
+
+    wheel_separation_multiplier: 1.5
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+
+    pose_covariance_diagonal : [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [1000000.0, 1000000.0, 0.03, 1000000.0, 1000000.0, 0.03]
+
+    open_loop: false
+    enable_odom_tf: false
+    cmd_vel_timeout: 0.25
+
+    # 速度/加速度限制保持 Jackal 默认
+    linear.x.has_velocity_limits:  true
+    linear.x.max_velocity:         2.0
+    linear.x.min_velocity:        -2.0
+    linear.x.has_acceleration_limits: true
+    linear.x.max_acceleration:    20.0
+    linear.x.min_acceleration:   -20.0
+
+    angular.z.has_velocity_limits:  true
+    angular.z.max_velocity:         4.0
+    angular.z.min_velocity:        -4.0
+    angular.z.has_acceleration_limits: true
+    angular.z.max_acceleration:    25.0
+    angular.z.min_acceleration:   -25.0

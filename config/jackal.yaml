@@ -1,0 +1,82 @@
+name: jackal
+model: jackal
+robot:
+  usd_path: /home/ewhaglab/isaac/usd/jackal.usd
+  prim_path: /World/Robots/jackal
+  urdf_path: /home/ewhaglab/isaac/robots/jackal/jackal_description/urdf/jackal.gazebo
+  base_prim: base_link
+  pose:
+    position:
+    - 3.0
+    - 0.0
+    - 0.0
+    orientation_quat_wxyz:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+
+ros:
+  tf_prefix: ''
+  publish_clock: true
+  publish_odom: true
+  publish_tf: false
+  publish_joint_states: true
+  odom_topic: /jackal_velocity_controller/odom
+  tf_topic: /tf
+  tf_static_topic: /tf_static
+
+diff_drive:
+  enabled: true
+
+sensors:
+  base_link_prim: "/World/Robots/jackal/base_link"
+
+  lidar:
+    enabled: true
+    name: "lidar"
+    parent_prim: "/World/Robots/jackal/base_link"    
+    topic_scan: "/jackal/scan"
+    topic_pointcloud: "/jackal/points"
+    frame_id: "base_link"
+    publish_tf: false
+
+  imu:
+    enabled: true
+    name: "imu"
+    prim_path: "/World/Robots/jackal/base_link"                                
+    topic: "/jackal/imu"
+    frame_id: "base_link"
+    debug_print: false
+
+  camera:
+    enabled: true
+    name: "camera"
+    freq: 10
+    publish_tf: false
+    publish_rgb: true
+    publish_depth: true
+    publish_camera_info: true
+
+  left_wheel_names:
+  - front_left_wheel_link
+  - rear_left_wheel_link
+  right_wheel_names:
+  - front_right_wheel_link
+  - rear_right_wheel_link
+
+  wheel_joints:
+  - front_left_wheel_link
+  - rear_left_wheel_link
+  - front_right_wheel_link
+  - rear_right_wheel_link
+
+  wheel_distance: 0.36
+  wheel_radius: 0.098
+  max_linear_speed: 2.0
+  max_angular_speed: 4.0
+
+frames:
+  odom_frame_id: odom
+  base_frame_id: base_link
+

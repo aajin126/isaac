@@ -1,0 +1,43 @@
+actions:
+  continuous:
+    angular_range:
+    - -1.82
+    - 1.82
+    linear_range:
+    - -0.26
+    - 0.26
+  discrete:
+  - angular: 0.0
+    linear: 0.26
+    name: move_forward
+  - angular: 0.0
+    linear: -0.15
+    name: move_backward
+  - angular: 0.35
+    linear: 0.15
+    name: turn_left
+  - angular: -0.35
+    linear: 0.15
+    name: turn_right
+  - angular: 0.75
+    linear: 0.0
+    name: turn_strong_left
+  - angular: -0.75
+    linear: 0.0
+    name: turn_strong_right
+  - angular: 0.0
+    linear: 0.0
+    name: stop
+is_holonomic: false
+laser:
+  angle:
+    increment: 0.0175019223243
+    max: 6.28318977356
+    min: 0
+  num_beams: 360
+  range: 3.5
+  update_rate: 10
+robot_base_frame: base_footprint
+robot_model: waffle
+robot_radius: 0.208
+robot_sensor_frame: laser_link

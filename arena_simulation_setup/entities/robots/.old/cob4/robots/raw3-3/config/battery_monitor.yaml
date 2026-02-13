@@ -1,0 +1,8 @@
+enable_light: true
+enable_sound: false
+light_components:
+- light
+num_leds: 1
+threshold_critical: 5
+threshold_error: 10
+threshold_warning: 20

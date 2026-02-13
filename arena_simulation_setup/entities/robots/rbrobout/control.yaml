@@ -1,0 +1,57 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # 将控制器重命名为 rbrobout_velocity_controller
+    rbrobout_velocity_controller:
+      type: diff_drive_controller/DiffDriveController
+
+# 控制器参数
+rbrobout_velocity_controller:
+  ros__parameters:
+    # --- 已根据 RB-ROBOUT 修改 ---
+    left_wheel_names: [ "robot_left_wheel_joint" ]
+    right_wheel_names: [ "robot_right_wheel_joint" ]
+    wheel_separation: 0.520
+    wheel_radius: 0.125
+    # --- 以上已修改 ---
+
+    wheel_separation_multiplier: 1.0 # 对于两轮差速机器人，通常为1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_link # 与 model_params.yaml 保持一致
+    pose_covariance_diagonal : [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+
+    open_loop: false
+    enable_odom_tf: true # 通常建议开启以发布 odom -> base_link 的 TF
+
+    cmd_vel_timeout: 0.25
+    use_stamped_vel: false
+
+    # 保留 Jackal 的速度和加速度限制作为初始值
+    preserve_turning_radius: true
+    publish_cmd: true
+    publish_wheel_data: true
+
+    linear.x.has_velocity_limits: true
+    linear.x.has_acceleration_limits: true
+    linear.x.has_jerk_limits: false
+    linear.x.max_velocity: 2.0
+    linear.x.min_velocity: -2.0
+    linear.x.max_acceleration: 20.0
+    linear.x.min_acceleration: -20.0
+
+    angular.z.has_velocity_limits: true
+    angular.z.has_acceleration_limits: true
+    angular.z.has_jerk_limits: false
+    angular.z.max_velocity: 4.0
+    angular.z.min_velocity: -4.0
+    angular.z.max_acceleration: 25.0
+    angular.z.min_acceleration: -25.0

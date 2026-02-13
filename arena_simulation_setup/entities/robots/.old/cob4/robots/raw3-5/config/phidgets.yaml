@@ -1,0 +1,15 @@
+boards:
+  base_monitor:
+    sensors:
+      bat1:
+        index: 0
+        type: analog
+      em_butt_not_stop:
+        index: 0
+        type: digital_in
+      em_scanner_not_stop:
+        index: 1
+        type: digital_in
+    serial_num: 265664
+frequency: 30
+update_mode: polling

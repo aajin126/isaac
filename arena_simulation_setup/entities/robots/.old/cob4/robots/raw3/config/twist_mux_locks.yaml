@@ -1,0 +1,13 @@
+locks:
+- name: pause_navigation
+  priority: 21
+  timeout: 0.0
+  topic: twist_mux/locks/pause_navigation
+- name: pause_teleop
+  priority: 101
+  timeout: 0.0
+  topic: twist_mux/locks/pause_teleop
+- name: pause_all
+  priority: 255
+  timeout: 0.0
+  topic: twist_mux/locks/pause_all

@@ -1,0 +1,71 @@
+robot_base_frame: 'base_link'
+robot_odom_frame: 'odom'
+
+observation_sources_string: lidar # massive bullshit, costmaps still need string param
+observation_sources:
+  - lidar
+observation_sources_dict:
+  lidar:
+    topic: ${namespace}/lidar
+    max_obstacle_height: 2.0
+    clearing: True
+    marking: True
+    data_type: "LaserScan"
+
+polygons:
+  - StopPolygon
+polygons_dict:
+  StopPolygon:
+    type: "polygon"
+    points: "[ [0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1] ]"
+    action_type: "stop"
+    min_points: 4
+    visualize: True
+    polygon_pub_topic: "polygon_stop"
+    enabled: True
+
+footprint: "[ [0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1] ]"
+
+actions:
+  continuous:
+    angular_range:
+    - -1.9
+    - 1.9
+    linear_range:
+    - -0.4
+    - 0.4
+  discrete:
+  - angular: 0.0
+    linear: 0.3
+    name: move_forward
+  - angular: 0.0
+    linear: -0.15
+    name: move_backward
+  - angular: 0.35
+    linear: 0.15
+    name: turn_left
+  - angular: -0.35
+    linear: 0.15
+    name: turn_right
+  - angular: 0.75
+    linear: 0.0
+    name: turn_strong_left
+  - angular: -0.75
+    linear: 0.0
+    name: turn_strong_right
+  - angular: 0.0
+    linear: 0.0
+    name: stop
+is_holonomic: false
+laser:
+  angle:
+    increment: 0.009817477
+    max: 3.14159
+    min: -3.14159
+  num_beams: 640
+  range: 12.0
+  update_rate: 10
+robot_base_frame: 'base_link'
+robot_model: turtlebot
+robot_radius: 0.10
+robot_sensor_frame: rplidar_link

@@ -1,0 +1,99 @@
+# =================================================================================
+# This is the UPDATED model_params.yaml for the Robotnik RB-VOGUI robot.
+#
+# It has been modified based on the detailed parameters found in the
+# official "rbvogui_controller_params.yaml" file.
+# =================================================================================
+
+# --- Observation Sources (for Costmap) ---
+observation_sources_string: lidar
+observation_sources:
+  - lidar
+observation_sources_dict:
+  lidar:
+    # This topic should match the output of your LiDAR driver in the simulation
+    topic: ${namespace}/scan
+    max_obstacle_height: 2.0
+    clearing: True
+    marking: True
+    data_type: "LaserScan"
+
+# --- Safety Polygons ---
+# A smaller polygon inside the robot's main footprint for safety stops.
+polygons:
+  - StopPolygon
+polygons_dict:
+  StopPolygon:
+    type: "polygon"
+    # MODIFIED: Adjusted to be smaller than the new, accurate footprint.
+    points: "[ [0.3, 0.2], [0.3, -0.2], [-0.3, -0.2], [-0.3, 0.2] ]"
+    action_type: "stop"
+    min_points: 3
+    visualize: True
+    polygon_pub_topic: "polygon_stop"
+    enabled: True
+
+# --- Planner Plugin (for Nav2) ---
+# This typically does not need to be changed for a different robot model.
+planner_plugins:
+  - GridBased
+planner_plugins_dict:
+  GridBased:
+    plugin: "nav2_navfn_planner/NavfnPlanner"
+    tolerance: 0.5
+    use_astar: false
+    allow_unknown: true
+
+# --- Robot Footprint ---
+# MODIFIED: Updated with accurate dimensions from the new controller file.
+# wheel_base: 0.76, track_width: 0.4745
+footprint: "[ [0.38, 0.24], [0.38, -0.24], [-0.38, -0.24], [-0.38, 0.24] ]"
+
+# --- Coordinate Frames ---
+# MODIFIED: Updated to match the frames used by the robotnik_base_controller.
+robot_base_frame: 'robot_base_footprint'
+robot_odom_frame: 'odom'
+
+# --- Action Space (Velocity Commands) ---
+# MODIFIED: Updated to reflect the holonomic movement and the limits
+# specified in the new controller file (linear: 0.3 m/s, angular: 0.3 rad/s).
+actions:
+  continuous:
+    angular_range:
+    - -0.3
+    - 0.3
+    linear_range: # Note: This is now a single range for holonomic movement
+    - -0.3
+    - 0.3
+  discrete:
+  - { name: move_forward,      linear: 0.3,  angular: 0.0 }
+  - { name: move_backward,     linear: -0.3, angular: 0.0 }
+  - { name: turn_left,         linear: 0.0,  angular: 0.3 }
+  - { name: turn_right,        linear: 0.0,  angular: -0.3 }
+  # Holonomic-specific movements
+  - { name: strafe_left,       linear_x: 0.0, linear_y: 0.3,  angular: 0.0 }
+  - { name: strafe_right,      linear_x: 0.0, linear_y: -0.3, angular: 0.0 }
+  - { name: stop,              linear: 0.0,  angular: 0.0 }
+
+# --- Kinematics ---
+# MODIFIED: The robot is holonomic due to four-wheel steering.
+is_holonomic: true
+
+# --- Laser Sensor Specification ---
+# These parameters depend on the physical LiDAR model, not the controller.
+# The Hokuyo UST-10LX values are likely correct.
+laser:
+  angle:
+    min: -2.35619449019 # -135 degrees
+    max: 2.35619449019  # +135 degrees
+    increment: 0.00436332312
+  num_beams: 1081
+  range: 10.0
+  update_rate: 40
+
+# --- Robot Model Identification ---
+robot_model: rbvogui
+# MODIFIED: Updated radius based on the new footprint calculation.
+robot_radius: 0.45 # sqrt(0.38^2 + 0.24^2)
+# !!! ACTION REQUIRED !!! VERIFY THIS FRAME NAME IN YOUR URDF.
+robot_sensor_frame: 'base_laser_link'

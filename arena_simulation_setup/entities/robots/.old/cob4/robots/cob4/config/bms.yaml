@@ -1,0 +1,138 @@
+bms_id_to_poll: 512
+can_device: can1
+diagnostics:
+- fields:
+  - bit_mask: 1
+    len: 2
+    name: battery_empty
+    offset: 0
+  - bit_mask: 2
+    len: 2
+    name: battery_almost_empty
+    offset: 0
+  - bit_mask: 4
+    len: 2
+    name: charging_fet_active
+    offset: 0
+  - bit_mask: 8
+    len: 2
+    name: discharging_fet_active
+    offset: 0
+  - bit_mask: 16
+    len: 2
+    name: battery_learning
+    offset: 0
+  - bit_mask: 32
+    len: 2
+    name: battery_discharging
+    offset: 0
+  - bit_mask: 64
+    len: 2
+    name: battery_full
+    offset: 0
+  - bit_mask: 128
+    len: 2
+    name: battery_charging
+    offset: 0
+  id: 1
+- fields:
+  - factor: 0.01
+    is_signed: true
+    len: 2
+    name: current
+    offset: 0
+    unit: A
+  id: 2
+- fields:
+  - factor: 0.01
+    is_signed: false
+    len: 2
+    name: voltage
+    offset: 0
+    unit: V
+  id: 3
+- fields:
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature
+    offset: 0
+    unit: Celsius
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature_cell_1
+    offset: 2
+    unit: Celsius
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature_cell_2
+    offset: 4
+    unit: Celsius
+  id: 4
+- fields:
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature_cell_3
+    offset: 0
+    unit: Celsius
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature_cell_4
+    offset: 2
+    unit: Celsius
+  - factor: 0.1
+    is_signed: true
+    len: 2
+    name: temperature_cell_5
+    offset: 4
+    unit: Celsius
+  id: 5
+- fields:
+  - factor: 0.001
+    is_signed: false
+    len: 2
+    name: remaining_capacity
+    offset: 0
+    unit: Ah
+  - factor: 0.001
+    is_signed: false
+    len: 2
+    name: full_charge_capacity
+    offset: 2
+    unit: Ah
+  id: 6
+- fields:
+  - factor: 1.0
+    is_signed: false
+    len: 2
+    name: discharge_cycles
+    offset: 0
+    unit: '#'
+  - factor: 1.0
+    is_signed: false
+    len: 2
+    name: cycles_after_learn
+    offset: 2
+    unit: '#'
+  - factor: 1.0
+    is_signed: false
+    len: 2
+    name: learning_cycles
+    offset: 4
+    unit: '#'
+  id: 7
+poll_frequency_hz: 20
+topics:
+- current
+- voltage
+- remaining_capacity
+- full_charge_capacity
+- temperature
+- battery_charging
+- battery_full
+- battery_learning
+- battery_almost_empty

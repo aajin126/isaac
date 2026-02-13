@@ -1,0 +1,51 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    boxer_velocity_controller:
+      type: diff_drive_controller/DiffDriveController
+
+boxer_velocity_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+
+    #  Physical geometry
+    wheel_separation: 0.55      # [m]  centre-to-centre
+    wheels_per_side: 1
+    wheel_radius: 0.095         # [m]  Ø190 mm wheels
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    #  Frames & TF
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_odom_tf: false
+
+    #  Publishing
+    publish_rate: 50.0
+    publish_cmd: true
+    publish_wheel_data: true
+
+    #  Low-level limits
+    cmd_vel_timeout: 0.25
+    preserve_turning_radius: true
+
+    #  Covariances
+    pose_covariance_diagonal:  [0.0025, 0.0025, 1e6, 1e6, 1e6, 0.05]
+    twist_covariance_diagonal: [1e6, 1e6, 0.05, 1e6, 1e6, 0.05]
+
+    #  Velocity & acceleration limits
+    linear.x.has_velocity_limits: true
+    linear.x.max_velocity: 2.0      # [m s⁻¹]
+    linear.x.has_acceleration_limits: true
+    linear.x.max_acceleration: 1.0  # [m s⁻²]  (100 kg payload ⇒ modest accel)
+
+    angular.z.has_velocity_limits: true
+    angular.z.max_velocity: 2.0     # [rad s⁻¹]
+    angular.z.has_acceleration_limits: true
+    angular.z.max_acceleration: 2.0 # [rad s⁻²]

@@ -1,0 +1,10 @@
+auto_adjust_stream_bytes_per_second: false
+auto_exposure: false
+auto_gain: false
+auto_whitebalance: true
+exposure: 0.065
+frame_id: head_color_camera_r_link
+gain: 3
+ip_address: 192.168.41.60
+stream_bytes_per_second: 124000000
+trigger_mode: streaming

@@ -1,0 +1,5 @@
+framerate: 10
+image_height: 960
+image_width: 1280
+pixel_format: yuyv
+video_device: /dev/video0

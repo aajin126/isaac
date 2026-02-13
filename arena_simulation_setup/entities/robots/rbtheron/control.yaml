@@ -1,0 +1,66 @@
+# Content is based on the official rbtheron Gazebo (Ignition) controller parameters
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    # --- Controller Loading ---
+    # 1. Publishes all joint states
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # 2. Robot base controller
+    rbtheron_controller:
+      type: robotnik_controllers/RBTheronController
+
+# --- Joint State Broadcaster Parameters ---
+joint_state_broadcaster:
+  ros__parameters:
+    use_sim_time: true
+
+# --- Base Controller Parameters ---
+rbtheron_controller:
+  ros__parameters:
+    use_sim_time: true
+    
+    # --- Key physical parameters (from official file) ---
+    wheel_radius: 0.0762
+    track_width:  0.5032
+    wheel_base: 0.458
+    
+    # --- Joint names (from official file) ---
+    # These joint names must exactly match the drive wheel joints in the URDF
+    base:
+      left:
+        traction:
+          joint_name: robot_left_wheel_joint
+      right:
+        traction:
+          joint_name: robot_right_wheel_joint
+
+    # --- Coordinate Frames ---
+    # Ensure these names are consistent with the odom definition in your URDF and mappings.yaml
+    odom_frame_id: odom
+    base_frame_id: robot_base_footprint
+
+    # --- Other Parameters ---
+    open_loop: true
+    cmd_vel_timeout: 1.0
+    publish_rate: 100.0
+
+    # --- Velocity and acceleration limits (from official file) ---
+    linear:
+      x:
+        has_velocity_limits: true
+        has_acceleration_limits: true
+        max_velocity: 1.0
+        min_velocity: -1.0
+        max_acceleration: 5.0
+        min_acceleration: -5.0
+    angular:
+      z:
+        has_velocity_limits: true
+        has_acceleration_limits: true
+        max_velocity: 1.0
+        min_velocity: -1.0
+        max_acceleration: 5.0
+        min_acceleration: -5.0

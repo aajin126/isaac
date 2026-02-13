@@ -1,0 +1,61 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    rbkairos_velocity_controller:
+      type: diff_drive_controller/DiffDriveController
+
+rbkairos_velocity_controller:
+  ros__parameters:
+    left_wheel_names: [ "front_left_wheel_joint", "rear_left_wheel_joint" ]
+    right_wheel_names: [ "front_right_wheel_joint", "rear_right_wheel_joint" ]
+
+    wheel_separation: 0.70              # metres, approximate
+    wheel_radius: 0.10                  # metres, placeholder
+
+    wheel_separation_multiplier: 1.5
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_link
+    pose_covariance_diagonal : [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [1000000.0, 1000000.0, 0.03, 1000000.0, 1000000.0, 0.03]
+
+    # If odom is not provided from wheel encoders at target rate
+    open_loop: false
+    enable_odom_tf: false
+
+    # timeout to reset cmd_vel
+    cmd_vel_timeout: 0.25
+
+    use_stamped_vel: false
+    preserve_turning_radius: true
+
+    publish_cmd: true
+    publish_wheel_data: true
+
+    # Velocity and acceleration limits
+    linear.x.has_velocity_limits: true
+    linear.x.has_acceleration_limits: true
+    linear.x.has_jerk_limits: false
+    linear.x.max_velocity: 1.5          # Kairos max 1.5 m/s
+    linear.x.min_velocity: -1.5
+    linear.x.max_acceleration: 10.0
+    linear.x.min_acceleration: -10.0
+    linear.x.max_jerk: 0.0
+    linear.x.min_jerk: 0.0
+
+    angular.z.has_velocity_limits: true
+    angular.z.has_acceleration_limits: true
+    angular.z.has_jerk_limits: false
+    angular.z.max_velocity: 4.0
+    angular.z.min_velocity: -4.0
+    angular.z.max_acceleration: 20.0
+    angular.z.min_acceleration: -20.0
+    angular.z.max_jerk: 0.0
+    angular.z.min_jerk: 0.0

@@ -1,0 +1,18 @@
+TebLocalPlannerROS:
+  acc_lim_theta: 3.2
+  acc_lim_x: 2.5
+  allow_init_with_backwards_motion: false
+  exact_arc_length: false
+  footprint_model:
+    type: point
+  global_plan_prune_distance: 1
+  global_plan_viapoint_sep: -1
+  heading_scoring: true
+  max_samples: 500
+  max_vel_theta: 1.82
+  max_vel_x: 0.28
+  max_vel_x_backwards: 0.28
+  max_vel_y: 0.0
+  min_turning_radius: 0.0
+  odom_topic: odom
+  publish_feedback: false

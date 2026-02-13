@@ -1,0 +1,10 @@
+DwaLocalPlannerROS:
+  acc_lim_th: 3.2
+  acc_lim_x: 2.5
+  max_rot_vel: 1.2
+  max_vel_trans: 0.8
+  max_vel_x: 0.8
+  max_vel_y: 0.8
+  min_rot_vel: 0.1
+  min_vel_x: 0.0
+  min_vel_y: 0.1

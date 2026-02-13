@@ -1,0 +1,10 @@
+nodes:
+  b_caster_rotation_joint:
+    dcf_overlay:
+      607C: '-173745.5'
+  fl_caster_rotation_joint:
+    dcf_overlay:
+      607C: '-52642'
+  fr_caster_rotation_joint:
+    dcf_overlay:
+      607C: '67194'

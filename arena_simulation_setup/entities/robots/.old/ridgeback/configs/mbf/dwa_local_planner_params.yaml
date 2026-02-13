@@ -1,0 +1,13 @@
+DwaLocalPlannerROS:
+  acc_lim_theta: 1.0
+  acc_lim_x: 2.5
+  controller_frequency: 10.0
+  max_vel_theta: 2.0
+  max_vel_trans: 1.1
+  max_vel_x: 1.1
+  max_vel_y: 1.1
+  min_vel_theta: 0.14
+  min_vel_trans: 0.11
+  min_vel_x: -1.1
+  min_vel_y: -1.1
+  sim_time: 2.0

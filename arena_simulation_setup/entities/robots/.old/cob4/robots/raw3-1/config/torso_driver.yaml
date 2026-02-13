@@ -1,0 +1,15 @@
+defaults:
+  dcf_overlay:
+    604Csub1: '1'
+    604Csub2: '24000'
+  eds_file: robots/common/Schunk_0_63.dcf
+  eds_pkg: cob_hardware_config
+  vel_to_device: rint(rad2deg(vel)*250)
+nodes:
+- id: 7
+  name: torso_bottom_joint
+- id: 8
+  name: torso_side_joint
+sync:
+  interval_ms: 10
+  overflow: 0

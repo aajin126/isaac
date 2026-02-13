@@ -1,0 +1,36 @@
+drive_wheel:
+  pos_from_device: -obj6064 * 2 * pi / ( 4096 * 21 * 1)
+  pos_to_device: -rint(pos * 4096 * 21 * 1 / (2 * pi))
+  vel_from_device: -obj606c * 2 * pi / ( 4096 * 21 * 1)
+  vel_to_device: -rint(vel * 4096 * 21 * 1 / (2 * pi))
+nodes:
+  bl_caster_r_wheel_joint:
+    pos_from_device: -obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: -rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: -obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: -rint(vel * 4096 * 21 * 1 / (2 * pi))
+  bl_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: -12740
+      homing_speed: -5093
+  br_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: 3300
+      homing_speed: -5093
+  fl_caster_r_wheel_joint:
+    pos_from_device: -obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: -rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: -obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: -rint(vel * 4096 * 21 * 1 / (2 * pi))
+  fl_caster_rotation_joint:
+    motor_layer:
+      homing_event: 17
+      homing_offset: -12880
+      homing_speed: -5093
+  fr_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: 14000
+      homing_speed: -5093

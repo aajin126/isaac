@@ -1,0 +1,69 @@
+# Observation sources for the navigation stack
+observation_sources:
+  - lidar
+
+observation_sources_dict:
+  lidar:
+    # IMPORTANT: Ensure this ROS topic matches the 'ros_topic' you defined in mappings.yaml for the LiDAR.
+    # Common names are "scan" or "lidar".
+    topic: ${namespace}/scan
+    max_obstacle_height: 2.0
+    clearing: True
+    marking: True
+    data_type: "LaserScan"
+
+# Robot's physical footprint for the costmap.
+# IMPORTANT: This is a critical parameter. You must replace these placeholder values
+# with the actual vertices of your rbtheron's chassis, in meters.
+# The format is a list of [x, y] points relative to the base_frame.
+footprint: "[ [-0.25, -0.25], [0.25, -0.25], [0.25, 0.25], [-0.25, 0.25] ]"
+
+# Approximate radius of the robot for simpler collision checks.
+# IMPORTANT: Update this value to be the distance from the robot's center to its furthest point.
+robot_radius: 0.35
+
+# TF Frame IDs
+# IMPORTANT: Ensure these frame names match your URDF and control.yaml files.
+robot_base_frame: 'robot_base_footprint'
+robot_odom_frame: 'odom'
+
+# Robot action commands
+actions:
+  continuous:
+    # These ranges should match the velocity limits in your control.yaml
+    angular_range:
+    - -1.0
+    - 1.0
+    linear_range:
+    - -1.0
+    - 1.0
+  discrete:
+  - { angular: 0.0, linear: 0.3, name: move_forward }
+  - { angular: 0.0, linear: -0.15, name: move_backward }
+  - { angular: 0.35, linear: 0.15, name: turn_left }
+  - { angular: -0.35, linear: 0.15, name: turn_right }
+  - { angular: 0.75, linear: 0.0, name: turn_strong_left }
+  - { angular: -0.75, linear: 0.0, name: turn_strong_right }
+  - { angular: 0.0, linear: 0.0, name: stop }
+
+# The robot is non-holonomic (it cannot move sideways).
+is_holonomic: false
+
+# LiDAR sensor specifications
+# IMPORTANT: These values MUST match the specifications of the LiDAR on your rbtheron.
+# The most reliable source for this data is the sensor's .xacro or .urdf file.
+laser:
+  angle:
+    increment: 0.00654497222
+    max: 2.35619
+    min: -2.35619
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+
+# General robot information
+robot_model: rbtheron
+
+# The TF frame of the laser scanner sensor.
+# IMPORTANT: Find the correct frame name in your sensor's URDF file.
+robot_sensor_frame: laser_link

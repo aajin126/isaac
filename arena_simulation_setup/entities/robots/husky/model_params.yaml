@@ -1,0 +1,63 @@
+observation_sources_string: lidar
+observation_sources:
+- lidar
+observation_sources_dict:
+  lidar:
+    topic: ${namespace}/scan  # Husky通常的激光雷达话题是/scan
+    max_obstacle_height: 2.0
+    clearing: true
+    marking: true
+    data_type: LaserScan
+polygons:
+- StopPolygon
+polygons_dict:
+  StopPolygon:
+    type: polygon
+    points: "[ [0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1] ]"
+    action_type: stop
+    enabled: true
+    min_points: 4
+    polygon_pub_topic: polygon_stop
+    visualize: true
+actions:
+  discrete:
+  - angular: 0.0
+    linear: 0.3
+    name: move_forward
+  - angular: 0.0
+    linear: -0.15
+    name: move_backward
+  - angular: 0.35
+    linear: 0.15
+    name: turn_left
+  - angular: -0.35
+    linear: 0.15
+    name: turn_right
+  - angular: 0.75
+    linear: 0.0
+    name: rotate_left
+  - angular: -0.75
+    linear: 0.0
+    name: rotate_right
+  continuous:
+    angular_range:
+    - -2.2  # 调整为Husky的实际最大角速度
+    - 2.2
+    linear_range:
+    - -1.0  # 调整为Husky的实际最大线速度
+    - 1.0
+is_holonomic: false
+laser:
+  angle:
+    increment: 0.00654497222
+    max: 2.35619
+    min: -2.35619
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+robot_base_frame: base_link
+robot_model: husky # <--- 关键改动：模型名称
+robot_odom_frame: odom
+robot_radius: 0.5 # <--- 关键改动：Husky的机器人半径
+robot_sensor_frame: base_scan # <--- 关键改动：Husky标准的激光雷达坐标系
+z_offset: 0.37 # <--- 关键改动：Husky激光雷达的离地高度

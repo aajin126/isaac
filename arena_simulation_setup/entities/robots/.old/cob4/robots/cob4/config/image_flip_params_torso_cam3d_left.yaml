@@ -1,0 +1,6 @@
+display_warnings: false
+flip_color_image: true
+flip_pointcloud: true
+reference_frame: base_link
+rotation_angle: 0
+rotation_mode: 1

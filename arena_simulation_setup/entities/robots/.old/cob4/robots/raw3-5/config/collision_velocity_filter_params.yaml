@@ -1,0 +1,15 @@
+costmap_parameter_source: /local_costmap_node/costmap
+footprint_update_frequency: 0.1
+influence_radius: 2.0
+max_acceleration:
+- 0.3
+- 0.3
+- 0.4
+obstacle_damping_dist: 0.3
+pot_ctrl_kp: 3.0
+pot_ctrl_kv: 2.5
+pot_ctrl_virt_mass: 0.5
+pot_ctrl_vmax: 0.6
+pot_ctrl_vtheta_max: 0.8
+stop_threshold: 0.05
+use_circumscribed_threshold: 0.2

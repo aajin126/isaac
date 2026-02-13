@@ -1,0 +1,7 @@
+color_ok: green
+diagnostics_based: true
+enable_light: true
+enable_sound: false
+light_components:
+- light
+motion_based: true

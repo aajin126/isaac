@@ -1,0 +1,9 @@
+color_ok: cyan
+diagnostics_based: true
+enable_light: true
+enable_sound: true
+light_components:
+- light_base
+motion_based: true
+sound_components:
+- sound

@@ -1,0 +1,249 @@
+/*****************************************************************************
+*     Copyright 2023 NVIDIA Corporation. All rights reserved.
+******************************************************************************
+
+ MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,
+ WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR, 
+ THE MDL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF 
+ COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA
+ CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+ ANY GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, 
+ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF 
+ THE USE OR INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN 
+ THE MDL MATERIALS.
+*/
+
+mdl 1.4;
+
+import ::anno::*;
+import ::nvidia::core_definitions::flex_material_v2;
+import ::state::normal;
+
+const string COPYRIGHT = 
+" Copyright 2023 NVIDIA Corporation. All rights reserved.\n"
+" MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,\n"
+" WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR,\n" 
+" THE MDL MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n"
+" EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF\n"
+" MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\n" 
+" COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA\n"
+" CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY\n"
+" GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN\n"
+" AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR\n"
+" INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.\n";
+
+export material Mirror(
+    color base_color =  color ( 0.7969177f, 0.7969177f, 0.7969177f )
+    [[
+		::anno::display_name("Color"),
+        ::anno::description("Choose the color of the mirror."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  1.f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]])
+[[
+	::anno::display_name("Mirror - No Tint"),
+	::anno::description("A plain and simple mirror material"),
+	::anno::author("NVIDIA vMaterials"),
+	::anno::key_words(string[]("aec", "glass", "mirror", "architecture", "bathroom", "reflective")),
+	::anno::thumbnail("./.thumbs/Mirror.Mirror.png"),
+	::anno::copyright_notice(COPYRIGHT)
+]]= 
+::nvidia::core_definitions::flex_material_v2(
+    base_color:  base_color,
+    diffuse_roughness:  0.f,
+    is_metal:  true,
+    reflectivity:  reflection_weight,
+    reflection_roughness:  0.f,
+    anisotropy:  0.f,
+    anisotropy_rotation:  0.f,
+    transparency:  0.f,
+    transmission_color:  color ( 1.f , 1.f , 1.f),
+    volume_color:  color ( 1.f , 1.f , 1.f),
+    transmission_roughness:  0.f,
+    base_thickness:  0.1f,
+    ior:  1.5f,
+    thin_walled:  false,
+    normal:  ::state::normal ());
+
+
+    
+    
+    
+export material Mirror_Warm_Tint(
+    color base_color =  color ( 0.8122431f, 0.708298f, 0.5989411f )
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Choose the color of the mirror."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  1.f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]])
+[[
+	::anno::display_name("Mirror - Warm Tint"),
+	::anno::description("A plain and simple mirror material with a warm golden tint"),
+	::anno::author("NVIDIA vMaterials"),
+	::anno::key_words(string[]("aec", "glass", "mirror", "architecture", "bathroom", "reflective", "tint", "tinted", "warm", "gold")),
+	::anno::thumbnail("./.thumbs/Mirror.mirror_warm_tint.png"),
+	::anno::copyright_notice(COPYRIGHT)
+]]= 
+::nvidia::core_definitions::flex_material_v2(
+    base_color:  base_color,
+    diffuse_roughness:  0.f,
+    is_metal:  true,
+    reflectivity:  reflection_weight,
+    reflection_roughness:  0.f,
+    anisotropy:  0.f,
+    anisotropy_rotation:  0.f,
+    transparency:  0.f,
+    transmission_color:  color ( 1.f , 1.f , 1.f),
+    volume_color:  color ( 1.f , 1.f , 1.f),
+    transmission_roughness:  0.f,
+    base_thickness:  0.1f,
+    ior:  1.5f,
+    thin_walled:  false,
+    normal:  ::state::normal ());
+    
+    
+    
+    
+    
+    
+    
+export material Mirror_Cool_Tint(
+    color base_color =  color ( 0.3736157f, 0.5356432f, 0.5795451f)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Choose the color of the mirror."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  1.f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]])
+[[
+	::anno::display_name("Mirror - Cool Tint"),
+	::anno::description("A plain and simple mirror material with a cool blue tint"),
+	::anno::author("NVIDIA vMaterials"),
+	::anno::key_words(string[]("aec", "glass", "mirror", "architecture", "bathroom", "reflective", "tint", "tinted", "cool", "blue")),
+	::anno::thumbnail("./.thumbs/Mirror.mirror_cool_tint.png"),
+	::anno::copyright_notice(COPYRIGHT)
+]]= 
+::nvidia::core_definitions::flex_material_v2(
+    base_color:  base_color,
+    diffuse_roughness:  0.f,
+    is_metal:  true,
+    reflectivity:  reflection_weight,
+    reflection_roughness:  0.f,
+    anisotropy:  0.f,
+    anisotropy_rotation:  0.f,
+    transparency:  0.f,
+    transmission_color:  color ( 1.f , 1.f , 1.f),
+    volume_color:  color ( 1.f , 1.f , 1.f),
+    transmission_roughness:  0.f,
+    base_thickness:  0.1f,
+    ior:  1.5f,
+    thin_walled:  false,
+    normal:  ::state::normal ());
+
+	
+	
+export material Mirror_Smoked_Light(
+    color base_color =  color ( 0.4045412f, 0.4045412f, 0.4045412f )
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Choose the color of the mirror."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  1.f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]])
+[[
+	::anno::display_name("Mirror - Smoked Light"),
+	::anno::description("A plain and simple mirror material with a light smoked reflection property"),
+	::anno::author("NVIDIA vMaterials"),
+	::anno::key_words(string[]("aec", "glass", "mirror", "architecture", "bathroom", "reflective", "tint", "tinted", "smoked", "light")),
+	::anno::thumbnail("./.thumbs/Mirror.mirror_smoked_light.png"),
+	::anno::copyright_notice(COPYRIGHT)
+]]= 
+::nvidia::core_definitions::flex_material_v2(
+    base_color:  base_color,
+    diffuse_roughness:  0.f,
+    is_metal:  true,
+    reflectivity:  reflection_weight,
+    reflection_roughness:  0.f,
+    anisotropy:  0.f,
+    anisotropy_rotation:  0.f,
+    transparency:  0.f,
+    transmission_color:  color ( 1.f , 1.f , 1.f),
+    volume_color:  color ( 1.f , 1.f , 1.f),
+    transmission_roughness:  0.f,
+    base_thickness:  0.1f,
+    ior:  1.5f,
+    thin_walled:  false,
+    normal:  ::state::normal ());
+    
+    
+    
+    
+    
+    
+    
+export material Mirror_Smoked_Dark(
+    color base_color =  color ( 0.1419804f, 0.1419804f, 0.1419804f )
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Choose the color of the mirror."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  1.f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]])
+[[
+	::anno::display_name("Mirror - Smoked Dark"),
+	::anno::description("A plain and simple mirror material with a heavy smoked reflection property"),
+	::anno::author("NVIDIA vMaterials"),
+	::anno::key_words(string[]("aec", "glass", "mirror", "architecture", "bathroom", "reflective", "tint", "tinted", "smoked", "dark")),
+	::anno::thumbnail("./.thumbs/Mirror.mirror_smoked_dark.png"),
+	::anno::copyright_notice(COPYRIGHT)
+]]= 
+::nvidia::core_definitions::flex_material_v2(
+    base_color:  base_color,
+    diffuse_roughness:  0.f,
+    is_metal:  true,
+    reflectivity:  reflection_weight,
+    reflection_roughness:  0.f,
+    anisotropy:  0.f,
+    anisotropy_rotation:  0.f,
+    transparency:  0.f,
+    transmission_color:  color ( 1.f , 1.f , 1.f),
+    volume_color:  color ( 1.f , 1.f , 1.f),
+    transmission_roughness:  0.f,
+    base_thickness:  0.1f,
+    ior:  1.5f,
+    thin_walled:  false,
+    normal:  ::state::normal ());
+

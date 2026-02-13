@@ -1,0 +1,94 @@
+chain_base_link: arm_base_link
+chain_tip_link: arm_ee_link
+frame_tracker:
+  cart_min_dist_threshold_lin: 0.4
+  cart_min_dist_threshold_rot: 0.4
+  enable_abortion_checking: false
+  marker_scale: 0.3
+  movable_rot: true
+  movable_trans: true
+  pid_rot_x:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  pid_rot_y:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  pid_rot_z:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  pid_trans_x:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  pid_trans_y:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  pid_trans_z:
+    d: 0.0
+    i: 0.0
+    i_clamp: 0.0
+    p: 1.0
+  target_frame: arm_target
+  twist_dead_threshold_lin: 0.05
+  twist_dead_threshold_rot: 0.05
+  twist_deviation_threshold_lin: 0.5
+  twist_deviation_threshold_rot: 0.5
+  update_rate: 100.0
+root_frame: odom_combined
+twist_controller:
+  activation_threshold_ca: 0.1
+  activation_threshold_jla: 10.0
+  beta: 0.005
+  collision_check_links: []
+  constraint_ca: 1
+  constraint_jla: 1
+  controller_interface: cob_twist_controller/ControllerInterfaceVelocity
+  damping_ca: 1.0e-06
+  damping_factor: 0.01
+  damping_jla: 1.0e-06
+  damping_method: 2
+  enforce_acc_limits: false
+  enforce_input_limits: true
+  enforce_pos_limits: true
+  enforce_vel_limits: true
+  eps_damping: 0.003
+  eps_truncation: 0.001
+  extension_ratio: 0.02
+  integrator_smoothing: 0.2
+  k_H: 1.0
+  k_H_ca: -1.0
+  k_H_jla: -1.0
+  keep_direction: true
+  kinematic_extension: 0
+  lambda_max: 0.1
+  limits_tolerance: 5.0
+  lookat_axis_type: 2
+  lookat_offset:
+    rotation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    translation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+  max_lin_twist: 0.5
+  max_rot_twist: 0.5
+  max_vel_lin_base: 0.1
+  max_vel_rot_base: 0.1
+  numerical_filtering: false
+  priority: 500
+  priority_ca: 100
+  priority_jla: 50
+  solver: 3
+  w_threshold: 0.005

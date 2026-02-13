@@ -1,0 +1,6 @@
+battery_max_voltage: 50
+battery_min_voltage: 44
+em_stop_dio_port: 0
+robot_max_voltage: 70
+scanner_stop_dio_port: 1
+voltage_analog_port: 1

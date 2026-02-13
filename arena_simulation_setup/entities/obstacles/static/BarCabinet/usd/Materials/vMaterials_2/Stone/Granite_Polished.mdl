@@ -1,0 +1,1760 @@
+/*****************************************************************************
+*     Copyright 2023 NVIDIA Corporation. All rights reserved.
+******************************************************************************
+
+ MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,
+ WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR, 
+ THE MDL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF 
+ COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA
+ CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+ ANY GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, 
+ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF 
+ THE USE OR INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN 
+ THE MDL MATERIALS.
+*/
+
+mdl 1.4;
+
+import ::anno::*;
+import ::base::*;
+import ::math::*;
+import ::state::normal;
+import ::tex::*;
+import ::nvidia::core_definitions::*;
+import ::nvidia::core_definitions::dimension;
+
+const string COPYRIGHT = 
+" Copyright 2023 NVIDIA Corporation. All rights reserved.\n"
+" MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,\n"
+" WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR,\n" 
+" THE MDL MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n"
+" EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF\n"
+" MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\n" 
+" COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA\n"
+" CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY\n"
+" GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN\n"
+" AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR\n"
+" INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.\n";
+
+
+float3 srgb2rgb(float3 val)
+{
+	return ::math::pow(::math::max(val, float3(0.0f)), 2.2);
+}
+
+float uint2float(int x)
+{
+	return float(x & 0x7FFFFFFF) + (x < 0 ? 2147483648.0 : 0.0);
+}
+
+int lowbias32(int x)
+{
+	x ^= x >>> 16;
+	x *= 0x7feb352d;
+	x ^= x >>> 15;
+	x *= 0x846ca68b;
+	x ^= x >>> 16;
+	return x;
+}
+
+float2 rnd22(int2 p) {
+	float2 ret_val = float2(
+		uint2float(lowbias32(p[0] + lowbias32(p[1]))) / 4294967296.f,
+		uint2float(lowbias32(p[0] + 32000 + lowbias32(p[1]))) / 4294967296.f
+	);
+	return ret_val;
+}	
+
+::base::texture_coordinate_info vmat_transform(
+								uniform float2 translation = float2(0.0, 0.0),
+								uniform float rotation	 = 0.0,
+								uniform float2 scaling	 = float2(1.0, 1.0),
+								uniform ::base::texture_coordinate_system system = ::base::texture_coordinate_uvw,
+								uniform int uv_space	   = 0
+)
+{
+	float4x4 scale =
+	float4x4(1.0 /scaling.x, 0.			 ,  0. ,	 0.,
+			 0.			, 1.0 /scaling.y ,  0. ,	 0.,
+			 0.			, 0.			 ,  1.0,	 0.,
+			 translation.x , translation.y  ,  0.0,	 1.);
+
+	float s = ::math::sin(rotation);
+	float c = ::math::cos(rotation);
+	float4x4 rotate =
+	float4x4(  c  ,  -s   , 0.0 , 0.0,
+			   s  ,   c   , 0.0 , 0.0,
+			   0.0,   0.0 , 1.0 , 0.0,
+			   0. ,   0.0 , 0.0 , 1.);
+	
+	return ::base::transform_coordinate(scale*rotate, ::base::coordinate_source(system, uv_space));
+}
+
+float2x2 invert_2x2(float2x2 M)
+{
+	float det = M[0][0]*M[1][1] - M[0][1]*M[1][0];
+	//https://www.chilimath.com/lessons/advanced-algebra/inverse-of-a-2x2-matrix/
+	return (1.0 / det) * float2x2(M[1][1], -M[0][1], -M[1][0], M[0][0]);
+}
+
+float3 nonrepeat_lookup(
+	uniform texture_2d texture = texture_2d(),
+	::base::texture_coordinate_info uvw = ::base::coordinate_source(),
+	float texture_scale = 1.0,
+	uniform float3 average_color = float3(0.5),
+	float patch_size = 8.0
+)
+{
+	
+	float2 uv_in = float2(uvw.position[0], uvw.position[1]) * texture_scale;
+	float Z =  patch_size;	 // patch scale inside example texture
+	
+	float3 O = float3(0.f);
+	float2x2 M0 = float2x2(1.f,0.f, 0.5f, ::math::sqrt(3.f)/2.f);
+	float2x2 M = invert_2x2(M0); // transform matrix <-> tilted space
+	
+	float2 U = uv_in;
+	float2 V = M * uv_in; //pre-tilted hexa coordinates
+	int2 I = int2(::math::floor(V)); // hexa-tile id
+	
+	// The mean color needs to be determined in Photoshop then to make the
+	// average color work out, take the float value and calculate the apropriate
+	// mean value as (value^(1/2.2))
+
+	float3 m = average_color;
+	
+	float3 F = float3(::math::frac(V)[0], ::math::frac(V)[1], 0.f), W;
+	F[2] = 1.0 - F[0] - F[1]; // local hexa coordinates
+	
+	if( F[2] > 0.f )
+
+		O = (W[0] = F[2]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I))) - m)
+		  + (W[1] = F[1]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(0,1)))) - m)
+		  + (W[2] = F[0]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1,0)))) - m);
+	else
+		O = (W[0] =	  -F[2]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1))))   - m)
+		  + (W[1] = 1.f - F[1]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1, 0)))) - m)
+		  + (W[2] = 1.f - F[0]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(0, 1)))) - m);
+	O = m + O/::math::length(W);
+	O = ::math::clamp( (O), 0.0, 1.0);
+	
+	return float3(O);
+}
+
+
+
+export material Granite_Polished(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/baltic_brown_diff.png", ::tex::gamma_linear)
+    [[
+		::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]]
+	)
+[[
+    ::anno::author("NVIDIA vMaterials"),
+    ::anno::display_name("Polished Granite - Baltic Brown"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "baltic", "brown")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.Granite_Polished.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 9.5f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.417000f, 0.350000f, 0.318000f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  			the_tint,
+		diffuse_roughness:		0.f,
+		is_metal:				false,
+		reflectivity:			reflection_weight,
+		reflection_roughness:	0.f,
+		anisotropy:				0.f,
+		anisotropy_rotation:	0.f,
+		transparency:			0.f,
+		transmission_color:		color ( 1.f , 1.f , 1.f),
+		volume_color:			color ( 1.f , 1.f , 1.f),
+		transmission_roughness:	0.f,
+		base_thickness:			0.1f,
+		ior:					ior,
+		thin_walled:			false,
+		normal:					::state::normal ());
+	
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+
+
+    
+    
+    
+    
+    
+    
+
+export material baltic_red(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/baltic_red_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Baltic Red"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "baltic", "dark", "red")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.baltic_red.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]] = let {
+	
+	float2 texture_scale_remap = texture_scale / 11.0f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.384f, 0.263f, 0.244f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+   
+    
+
+    
+
+export material black_galaxy(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/granite_blackgalaxy_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    color flake_color =  color ( 0.9f , 0.7f , 0.5f)
+    [[
+        ::anno::display_name("Flake Color"),
+        ::anno::description("Choose a color of the flakes."),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float flake_amount = 0.08f
+    [[
+        ::anno::display_name("Flake Amount"),
+        ::anno::description("Adjust the amount of flakes."),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.0,1.)
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.0,1.)
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the Transform of the texture."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f , 1.f )
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of Refraction"),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index = 0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Black Galaxy"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "black", "dark")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.black_galaxy.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]] = let {
+	
+	float2 texture_scale_remap = texture_scale / 11.5f;
+	
+	float infinite_texture_scale = 6.0f;
+	float infinite_patch_size = 6.0f;
+	float3 average_color = color(0.046f, 0.049f, 0.058f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::apply_metallicflakes(
+		base:  ::nvidia::core_definitions::flex_material_v2(
+			base_color:  the_tint,
+			diffuse_roughness:  0.f,
+			is_metal:  false,
+			reflectivity:  reflection_weight,
+			reflection_roughness:  0.f,
+			anisotropy:  0.f,
+			anisotropy_rotation:  0.f,
+			transparency:  0.f,
+			transmission_color:  color ( 1.f , 1.f , 1.f),
+			volume_color:  color ( 1.f , 1.f , 1.f),
+			transmission_roughness:  0.f,
+			base_thickness:  0.1f,
+			ior:  ior,
+			thin_walled:  false,
+			normal:  ::state::normal ()),
+		flake_color:  flake_color,
+		roughness:  0.f,
+		size:  texture_scale.x * 0.3f ,
+		amount:  flake_amount,
+		opacity:  0.6f,
+		bump:  1.f);
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+
+    
+    
+    
+    
+    
+    
+    
+export material blue_eyes(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/granite_blue_eyes_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection. "),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.0,1.)
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f , 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform float flake_ior =  1.7f
+    [[
+        ::anno::display_name("Flake IOR"),
+        ::anno::description("Index of refraction of the flakes."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index = 0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Blue Eyes"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "blue eyes", "multicolored", "light")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.blue_eyes.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]] = let {
+	
+	float2 texture_scale_remap = texture_scale / 14.5f;
+	
+	float infinite_texture_scale = 6.0f;
+	float infinite_patch_size = 6.0f;
+	float3 average_color = color(0.507f, 0.519f, 0.532f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	float the_weight = nonrepeat_lookup(
+		texture:		texture_2d ( "./textures/granite_a_mask.png", ::tex::gamma_linear),
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	float3(0.005),
+		patch_size:		infinite_patch_size
+	).x;
+	
+	material the_mat = ::nvidia::core_definitions::blend(
+		base:  ::nvidia::core_definitions::flex_material_v2(
+			base_color:  the_tint,
+			diffuse_roughness:  0.f,
+			is_metal:  false,
+			reflectivity:  reflection_weight,
+			reflection_roughness:  0.f,
+			anisotropy:  0.f,
+			anisotropy_rotation:  0.f,
+			transparency:  0.f,
+			transmission_color:  color ( 1.f , 1.f , 1.f),
+			volume_color:  color ( 1.f , 1.f , 1.f),
+			transmission_roughness:  0.f,
+			base_thickness:  0.1f,
+			ior:  ior,
+			thin_walled:  false,
+			normal:  ::state::normal ()),
+		blend:  ::nvidia::core_definitions::flex_material_v2(
+			base_color: color ( 0.05284314f , 0.3488667f , 0.5234431f),
+			diffuse_roughness:  0.f,
+			is_metal:  false,
+			reflectivity:  1.f,
+			reflection_roughness:  0.f,
+			anisotropy:  0.f,
+			anisotropy_rotation:  0.f,
+			transparency:  0.f,
+			transmission_color:  color ( 1.f , 1.f , 1.f),
+			volume_color:  color ( 1.f , 1.f , 1.f),
+			transmission_roughness:  0.f,
+			base_thickness:  0.1f,
+			ior:  flake_ior,
+			thin_walled:  false,
+			normal:  ::state::normal ()),
+		weight:  the_weight);
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);    
+
+
+
+
+ 
+        
+
+export material butterfly_verde(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/butterfly_verde_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.0,1.)
+    ]],
+     uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotate angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f , 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index = 0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Butterfly Verde"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "butterfly verde", "green", "dark")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.butterfly_verde.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 17.5f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.307f, 0.328f, 0.247f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color: the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+ 
+
+export material caledonia(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/caledonia_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Caledonia"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "gray")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.caledonia.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 14.5f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.635f, 0.634f, 0.630f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  			the_tint,
+		diffuse_roughness:		0.f,
+		is_metal:				false,
+		reflectivity:			reflection_weight,
+		reflection_roughness:	0.f,
+		anisotropy:				0.f,
+		anisotropy_rotation:	0.f,
+		transparency:			0.f,
+		transmission_color:		color ( 1.f , 1.f , 1.f),
+		volume_color:			color ( 1.f , 1.f , 1.f),
+		transmission_roughness:	0.f,
+		base_thickness:			0.1f,
+		ior:					ior,
+		thin_walled:			false,
+		normal:					::state::normal ());
+
+   	
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+
+export material castor_brown(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/castor_brown_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform color flake_color =  color ( 0.8277255f , 0.7969177f , 0.7372039f)
+    [[
+        ::anno::display_name("Flake Color"),
+        ::anno::description("Choose the color of the flakes."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.0, 1.0)
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("(Controls the position of the texture."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f , 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+        uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::in_group("Advanced"),
+        ::anno::soft_range(1.0, 4.0)
+    ]],
+    uniform float flake_ior =  1.5f
+    [[
+        ::anno::display_name("Flake IOR"),
+        ::anno::description("Index of refraction of the flakes."),
+        ::anno::in_group("Advanced"),
+        ::anno::soft_range(1.0, 4.0)
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV Space Index."),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Castor Brown"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "castor", "brown")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.castor_brown.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 17.0f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.472f, 0.437f, 0.381f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	float the_mask = srgb2rgb(nonrepeat_lookup(
+		texture:		 texture_2d ( "./textures/granite_a_mask.png", ::tex::gamma_linear),
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	float3(0.005),
+		patch_size:		infinite_patch_size
+	)).x;
+
+
+	material the_mat = ::nvidia::core_definitions::blend(
+		base:  ::nvidia::core_definitions::flex_material_v2(
+			base_color:  			the_tint,
+			diffuse_roughness:  	0.f,
+			is_metal:				false,
+			reflectivity:			reflection_weight,
+			reflection_roughness:	0.f,
+			anisotropy:				0.f,
+			anisotropy_rotation:	0.f,
+			transparency:			0.f,
+			transmission_color:		color ( 1.f , 1.f , 1.f),
+			volume_color:			color ( 1.f , 1.f , 1.f),
+			transmission_roughness:	0.f,
+			base_thickness:			0.1f,
+			ior:					ior,
+			thin_walled:			false,
+			normal:					::state::normal ()),
+		blend:  ::nvidia::core_definitions::flex_material_v2(
+			base_color:				flake_color,
+			diffuse_roughness:		0.f,
+			is_metal:				false,
+			reflectivity:			1.f,
+			reflection_roughness:  0.1f,
+			anisotropy:				0.f,
+			anisotropy_rotation:	0.f,
+			transparency:			0.f,
+			transmission_color:		color ( 1.f , 1.f , 1.f),
+			volume_color:			color ( 1.f , 1.f , 1.f),
+			transmission_roughness:	0.f,
+			base_thickness:			0.1f,
+			ior:					flake_ior,
+			thin_walled:			false,
+			normal:					::state::normal ()),
+			weight:  				the_mask
+	);
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+      
+        
+        
+        
+        
+        
+
+        
+
+export material emerald_pearl(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/emerald_pearl_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance"),
+		::anno::hidden()
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Emerald Pearl"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "dark", "emerald pearl")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.emerald_pearl.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	float2 texture_scale_remap = texture_scale / 20.0f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.173f, 0.182f, 0.157f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+      
+        
+        
+
+    
+    
+    
+export material giallo_fiorito(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/giallo_fiorito_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Giallo Fiorito"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "red", "brown", "giallo" "fiorito")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.giallo_fiorito.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 18.0f;
+	
+	float infinite_texture_scale = 6.0f;
+	float infinite_patch_size = 6.0f;
+	float3 average_color = color(0.446f, 0.325f, 0.206f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:				the_tint,
+		diffuse_roughness:		0.f,
+		is_metal:				false,
+		reflectivity:			reflection_weight,
+		reflection_roughness:	0.f,
+		anisotropy:				0.f,
+		anisotropy_rotation:	0.f,
+		transparency:			0.f,
+		transmission_color:		color ( 1.f , 1.f , 1.f),
+		volume_color:			color ( 1.f , 1.f , 1.f),
+		transmission_roughness:	0.f,
+		base_thickness:			0.1f,
+		ior:					ior,
+		thin_walled:			false,
+		normal:					::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+
+
+
+
+
+
+export material golden_galaxy(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/golden_galaxy_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Golden Galaxy"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "golden galaxy", "light", "gold")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.golden_galaxy.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 8.5f;
+	
+	float infinite_texture_scale = 13.0f;
+	float infinite_patch_size = 13.0f;
+	float3 average_color = color(0.834f, 0.768f, 0.645f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	)*0.88f);
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:				the_tint,
+		diffuse_roughness:  	0.f,
+		is_metal:				false,
+		reflectivity:			reflection_weight,
+		reflection_roughness:	0.f,
+		anisotropy:				0.f,
+		anisotropy_rotation:	0.f,
+		transparency:			0.f,
+		transmission_color:		color ( 1.f , 1.f , 1.f),
+		volume_color:			color ( 1.f , 1.f , 1.f),
+		transmission_roughness:	0.f,
+		base_thickness:			0.1f,
+		ior:					ior,
+		thin_walled:			false,
+		normal:					::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);		
+    
+    
+      
+    
+    
+
+export material ice_kynite(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/ice_kynite_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Ice Kynite"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "dark", "ice kyanite")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.ice_kynite.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 14.5f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.193f, 0.197f, 0.197f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);  
+
+
+
+
+
+
+
+export material morning_rose(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/morning_rose_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Morning Rose"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "rose", "orange", "bright")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.morning_rose.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]]= let {
+	
+	float2 texture_scale_remap = texture_scale / 13.0f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.824f, 0.657f, 0.575f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);		
+		
+
+
+
+
+export material tan_brown(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/tan_brown_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Tan Brown"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "tan", "multicolored", "brown", "dark")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.tan_brown.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]] = let {
+	
+	float2 texture_scale_remap = texture_scale / 15.0f;
+	
+	float infinite_texture_scale = 12.0f;
+	float infinite_patch_size = 12.0f;
+	float3 average_color = color(0.318f, 0.237f, 0.186f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+ } in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+      
+    
+    
+    
+
+export material tiger_skin_gold(
+    uniform texture_2d color_texture =  texture_2d ( "./textures/tiger_skin_gold_diff.png", ::tex::gamma_linear)
+    [[
+        ::anno::display_name("Color"),
+        ::anno::description("Attach a tileable granite texture."),
+        ::anno::in_group("Appearance")
+    ]],
+    float reflection_weight =  0.7f
+    [[
+        ::anno::display_name("Reflection Weight"),
+        ::anno::description("Amount of reflection, higher numbers provide more reflection."),
+        ::anno::hard_range(0.0,1.0),
+        ::anno::in_group("Appearance")
+    ]],
+    uniform float2 texture_translate =  float2 ( 0.f)
+    [[
+        ::anno::display_name("Translate"),
+        ::anno::description("Controls the position of the texture"),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float texture_rotate =  0.f
+    [[
+        ::anno::display_name("Rotate"),
+        ::anno::description("Rotates angle of the texture in degrees."),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float2 texture_scale =  float2 ( 1.f)
+    [[
+        ::anno::display_name("Scale"),
+        ::anno::description("Larger numbers increase the texture size."),
+		::nvidia::core_definitions::dimension(float2(1.0f, 1.0f)),
+        ::anno::in_group("Transform")
+    ]],
+    uniform float ior =  1.5f
+    [[
+        ::anno::display_name("IOR"),
+        ::anno::description("Index of refraction."),
+        ::anno::soft_range(1.0,4.0),
+        ::anno::in_group("Advanced")
+    ]],
+    uniform int uv_space_index =  0
+    [[
+        ::anno::display_name("UV Space Index"),
+        ::anno::description("UV space index."),
+        ::anno::hard_range(0,3),
+        ::anno::in_group("Advanced")
+    ]])
+[[
+    ::anno::author("NVIDIA vMaterials"),
+	::anno::display_name("Polished Granite - Tiger Skin Gold"),
+    ::anno::description("A polished granite material usable for interior design"),
+	::anno::key_words(string[]("aec", "granite", "interior", "stone", "polished", "new", "floor", "kitchen", "bathroom", "construction", "gold", "brown", "light")),
+	::anno::thumbnail("./.thumbs/Granite_Polished.tiger_skin_gold.png"),
+    ::anno::copyright_notice(COPYRIGHT)
+]] = let {
+	
+	float2 texture_scale_remap = texture_scale / 12.5f;
+	
+	float infinite_texture_scale = 8.0f;
+	float infinite_patch_size = 8.0f;
+	float3 average_color = color(0.617f, 0.537f, 0.430f);
+	
+	::base::texture_coordinate_info uvw = vmat_transform(
+		translation:	texture_translate,
+		rotation:		texture_rotate,
+		scaling:		texture_scale_remap,
+		uv_space:		uv_space_index
+	);
+	
+	color the_tint = srgb2rgb(nonrepeat_lookup(
+		texture:		color_texture,
+		uvw:			uvw,
+		texture_scale:	infinite_texture_scale,
+		average_color:	average_color,
+		patch_size:		infinite_patch_size
+	));
+	
+	
+	material the_mat = ::nvidia::core_definitions::flex_material_v2(
+		base_color:  the_tint,
+		diffuse_roughness:  0.f,
+		is_metal:  false,
+		reflectivity:  reflection_weight,
+		reflection_roughness:  0.f,
+		anisotropy:  0.f,
+		anisotropy_rotation:  0.f,
+		transparency:  0.f,
+		transmission_color:  color ( 1.f , 1.f , 1.f),
+		volume_color:  color ( 1.f , 1.f , 1.f),
+		transmission_roughness:  0.f,
+		base_thickness:  0.1f,
+		ior:  ior,
+		thin_walled:  false,
+		normal:  ::state::normal ());
+
+} in material(
+	thin_walled:	the_mat.thin_walled,
+	surface:		the_mat.surface,
+	backface:		the_mat.backface,
+	ior:			the_mat.ior,
+	volume:			the_mat.volume,
+	geometry:		the_mat.geometry
+);
+   
+    

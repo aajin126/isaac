@@ -1,0 +1,11 @@
+DwaLocalPlannerROS:
+  acc_lim_theta: 3.2
+  acc_lim_x: 2.5
+  max_vel_theta: 1.0
+  max_vel_trans: 2.78
+  max_vel_x: 2.78
+  max_vel_y: 2.78
+  min_vel_theta: 0.5
+  min_vel_trans: 1.39
+  min_vel_x: -2.78
+  min_vel_y: -2.78

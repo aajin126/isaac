@@ -1,0 +1,22 @@
+bodies:
+- color:
+  - 0.8
+  - 0.2
+  - 0
+  - 1.0
+  footprints:
+  - collision: false
+    density: 1
+    layers:
+    - static
+    points:
+    - - -0.8
+      - 3.6
+    - - 0.8
+      - 3.6
+    - - 0.8
+      - -3.6
+    - - -0.8
+      - -3.6
+    type: polygon
+  name: base

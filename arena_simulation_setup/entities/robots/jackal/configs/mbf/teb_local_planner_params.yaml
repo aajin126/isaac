@@ -1,0 +1,13 @@
+TebLocalPlannerROS:
+  acc_lim_theta: 20.0
+  acc_lim_x: 10.0
+  footprint_model:
+    type: point
+  heading_scoring: true
+  max_vel_theta: 1.57
+  max_vel_x: 2.0
+  max_vel_x_backwards: 0.5
+  max_vel_y: 0.0
+  min_turning_radius: 0.0
+  xy_goal_tolerance: 0.25
+  yaw_goal_tolerance: 0.17

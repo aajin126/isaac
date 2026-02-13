@@ -1,0 +1,9 @@
+auto_exposure: false
+auto_gain: false
+auto_whitebalance: true
+exposure: 0.08
+frame_id: head_color_camera_l_link
+gain: 10
+ip_address: 10.0.0.50
+stream_bytes_per_second: 55000000
+trigger_mode: streaming

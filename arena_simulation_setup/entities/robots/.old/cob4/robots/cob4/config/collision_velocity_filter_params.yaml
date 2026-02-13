@@ -1,0 +1,17 @@
+costmap_obstacle_treshold: 250
+footprint_update_frequency: 0.5
+global_frame: base_footprint
+influence_radius: 2.0
+max_acceleration:
+- 0.5
+- 0.5
+- 0.7
+obstacle_damping_dist: 1.0
+pot_ctrl_kp: 3.0
+pot_ctrl_kv: 2.5
+pot_ctrl_virt_mass: 0.5
+pot_ctrl_vmax: 0.6
+pot_ctrl_vtheta_max: 0.6
+robot_base_frame: base_footprint
+stop_threshold: 0.1
+use_circumscribed_threshold: 0.5

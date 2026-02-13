@@ -1,0 +1,829 @@
+/******************************************************************************
+ *	 Copyright 2023 NVIDIA Corporation. All rights reserved.	 *
+ ******************************************************************************
+ 
+Permission is hereby granted by NVIDIA Corporation ("NVIDIA"), free of charge,
+to any person obtaining a copy of the sample definition code that uses our 
+Material Definition Language (the "MDL Materials"), to reproduce and distribute
+the MDL Materials, including without limitation the rights to use, copy, merge,
+publish, distribute, and sell modified and unmodified copies of the MDL 
+Materials, and to permit persons to whom the MDL Materials is furnished to do
+so, in all cases solely for use with NVIDIA's Material Definition Language,
+subject to the following further conditions:
+
+1. The above copyright notices, this list of conditions, and the disclaimer
+that follows shall be retained in all copies of one or more of the MDL
+Materials, including in any software with which the MDL Materials are bundled,
+redistributed, and/or sold, and included either as stand-alone text files,
+human-readable headers or in the appropriate machine-readable metadata fields
+within text or binary files as long as those fields can be easily viewed by the
+user, as applicable.
+2. The name of NVIDIA shall not be used to promote, endorse or advertise any 
+Modified Version without specific prior written permission, except a) to comply
+ with the notice requirements otherwise contained herein; or b) to acknowledge
+the contribution(s) of NVIDIA.
+
+THE MDL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE FOR 
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, 
+INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR INABILITY TO USE
+THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.
+*/
+
+mdl 1.6;
+
+import ::anno::*;
+import ::base::*;
+import ::df::*;
+import ::math::*;
+import ::state::*;
+import ::tex::*;
+import ::nvidia::core_definitions::blend_colors;
+import ::nvidia::core_definitions::dimension;
+
+
+const string COPYRIGHT = 
+" Copyright 2023 NVIDIA Corporation. All rights reserved.\n"
+" MDL MATERIALS ARE PROVIDED PURSUANT TO AN END USER LICENSE  AGREEMENT,\n"
+" WHICH WAS ACCEPTED IN ORDER TO GAIN ACCESS TO THIS FILE.  IN PARTICULAR,\n" 
+" THE MDL MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n"
+" EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF\n"
+" MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\n" 
+" COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL NVIDIA\n"
+" CORPORATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY\n"
+" GENERAL, SPECIAL,  INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN\n"
+" AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR\n"
+" INABILITY TO USE THE MDL MATERIALS OR FROM OTHER DEALINGS IN THE MDL MATERIALS.\n";
+
+const string DESCRIPTION = 	"A plain brass material with controls to add wear and dirt. Set the parameter "
+							"'Brass Type Blend' to 0.0 or 1.0 for yellow brass, 0.33 for gold brass and 0.66 for "
+							"red brass. Values inbetween will interpolate between the brass colors";
+
+color gradient_lookup_smooth(uniform texture_2d gradient_texture, float position, float gradient_select = 0)
+{
+	// Pixel centers lie in the middle. To properly access the pixel centers of the gradients, apply an offset
+	float2 texel_coord = float2(position, gradient_select + (0.5f / ::tex::height(gradient_texture)));
+	return color(::tex::lookup_float3(gradient_texture, texel_coord));
+}
+
+float3 srgb2rgb(float3 val)
+{
+	return ::math::pow(::math::max(val, float3(0.0f)), 2.2);
+}
+
+float remap(float input, float low_1, float high_1, float low_2, float high_2)
+{
+	return low_2 + ((input - low_1) * (high_2 - low_2))/(high_1 - low_1);
+}
+
+float uint2float(int x)
+{
+	return float(x & 0x7FFFFFFF) + (x < 0 ? 2147483648.0 : 0.0);
+}
+
+int lowbias32(int x)
+{
+	x ^= x >>> 16;
+	x *= 0x7feb352d;
+	x ^= x >>> 15;
+	x *= 0x846ca68b;
+	x ^= x >>> 16;
+	return x;
+}
+
+float2 rnd22(int2 p) {
+	float2 ret_val = float2(
+		uint2float(lowbias32(p[0] + lowbias32(p[1]))) / 4294967296.f,
+		uint2float(lowbias32(p[0] + 32000 + lowbias32(p[1]))) / 4294967296.f
+	);
+	return ret_val;
+}	
+
+::base::texture_coordinate_info vmat_transform(
+								uniform float2 translation = float2(0.0, 0.0),
+								uniform float rotation	 = 0.0,
+								uniform float2 scaling	 = float2(1.0, 1.0),
+								uniform ::base::texture_coordinate_system system = ::base::texture_coordinate_uvw,
+								uniform int uv_space	   = 0
+)
+{
+	float4x4 scale =
+	float4x4(1.0 /scaling.x, 0.			 ,  0. ,	 0.,
+			 0.			, 1.0 /scaling.y ,  0. ,	 0.,
+			 0.			, 0.			 ,  1.0,	 0.,
+			 translation.x , translation.y  ,  0.0,	 1.);
+
+	float s = ::math::sin(rotation);
+	float c = ::math::cos(rotation);
+	float4x4 rotate =
+	float4x4(  c  ,  -s   , 0.0 , 0.0,
+			   s  ,   c   , 0.0 , 0.0,
+			   0.0,   0.0 , 1.0 , 0.0,
+			   0. ,   0.0 , 0.0 , 1.);
+	
+	return ::base::transform_coordinate(scale*rotate, ::base::coordinate_source(system, uv_space));
+}
+
+float2x2 invert_2x2(float2x2 M)
+{
+	float det = M[0][0]*M[1][1] - M[0][1]*M[1][0];
+	//https://www.chilimath.com/lessons/advanced-algebra/inverse-of-a-2x2-matrix/
+	return (1.0 / det) * float2x2(M[1][1], -M[0][1], -M[1][0], M[0][0]);
+}
+
+float3 nonrepeat_lookup(
+	uniform texture_2d texture = texture_2d(),
+	::base::texture_coordinate_info uvw = ::base::coordinate_source(),
+	float texture_scale = 1.0,
+	float3 average_color = float3(0.5),
+	float patch_size = 8.0
+)
+{
+	
+	float2 uv_in = float2(uvw.position[0], uvw.position[1]) * texture_scale;
+	float Z =  patch_size;	 // patch scale inside example texture
+	float CON = 1.0f;
+	
+	float3 O = float3(0.f);
+	float2x2 M0 = float2x2(1.f,0.f, 0.5f, ::math::sqrt(3.f)/2.f);
+	float2x2 M = invert_2x2(M0); // transform matrix <-> tilted space
+	
+	float2 U = uv_in;
+	float2 V = M * uv_in; //pre-tilted hexa coordinates
+	int2 I = int2(::math::floor(V)); // hexa-tile id
+	
+	// The mean color needs to be determined in Photoshop then to make the
+	// average color work out, take the float value and calculate the apropriate
+	// mean value as (value^(1/2.2))
+
+	float3 m = average_color;
+	
+	float3 F = float3(::math::frac(V)[0], ::math::frac(V)[1], 0.f), W;
+	F[2] = 1.0 - F[0] - F[1]; // local hexa coordinates
+	
+	if( F[2] > 0.f )
+
+		O = (W[0] = F[2]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I))) - m*float(CON))
+		  + (W[1] = F[1]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(0,1)))) - m*float(CON))
+		  + (W[2] = F[0]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1,0)))) - m*float(CON));
+	else
+		O = (W[0] =	  -F[2]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1))))   - m*float(CON))
+		  + (W[1] = 1.f - F[1]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(1, 0)))) - m*float(CON))
+		  + (W[2] = 1.f - F[0]) * (( ::tex::lookup_float3(texture, U/Z-rnd22(I+int2(0, 1)))) - m*float(CON));
+	O = m + O/::math::length(W);
+	O = ::math::clamp( (O), 0.0, 1.0);
+	
+	return float3(O);
+}
+
+
+float histogram_range(float input, float range, float position)
+{	
+	float low = ::math::clamp(1.0 - ::math::min(((1.0 - position) + range * 0.5), (1.0 - position) * 2), 0.0, 1.0);
+	float high = ::math::clamp(::math::min((position + range * 0.5 ), position * 2.0), 0.0, 1.0);
+	return ::math::lerp(low, high, input);
+}
+
+float histogram_scan_big(float input, float width, float position)
+{
+	return ::math::clamp(
+				remap(input,
+					::math::lerp(-width, 1.0, position),
+					::math::lerp(0.0, 1.0 + width, position),
+					0.0,
+					1.0),
+				0.0,
+				1.0);
+}
+
+color endless_texture(
+	uniform texture_2d texture = texture_2d(),
+	::base::texture_coordinate_info uvw = ::base::coordinate_source(),
+	float texture_scale = 10.0,
+	float3 average_color = float3(0.5, 0.5, 1.0),
+	float patch_size = 8.0,
+	bool gamma_correct_lookup = true
+)
+{
+	return gamma_correct_lookup ? color(srgb2rgb(
+			nonrepeat_lookup (
+				texture: texture,
+				uvw: uvw,
+				texture_scale: texture_scale,
+				average_color: average_color,
+				patch_size: patch_size
+			))
+		) : color(nonrepeat_lookup (
+			texture: texture,
+			uvw: uvw,
+			texture_scale: texture_scale,
+			average_color: average_color,
+			patch_size: patch_size
+		));
+}
+
+float3 endless_normal(
+	uniform texture_2d texture = texture_2d(),
+	float factor = 1.0,
+	bool flip_tangent_u = false,
+	bool flip_tangent_v = false,
+	::base::texture_coordinate_info uvw = ::base::coordinate_source(),
+	float texture_scale = 1.0,
+	float3 average_color = float3(0.5, 0.5, 1.0),
+	float patch_size = 8.0
+)
+{
+	float3 transformed_tangent_u = flip_tangent_u ? uvw.tangent_u : - uvw.tangent_u;
+	float3 transformed_tangent_v = flip_tangent_v ? uvw.tangent_v : - uvw.tangent_v;
+	
+	if (flip_tangent_u)
+		transformed_tangent_u=-transformed_tangent_u;
+	if (flip_tangent_v)
+		transformed_tangent_v=-transformed_tangent_v;
+
+	// normalized Lookup
+	float3 tangent_space_normal =
+		 (nonrepeat_lookup (
+			texture: texture,
+			uvw: uvw,
+			texture_scale: texture_scale,
+			average_color: average_color,
+			patch_size: patch_size
+		) - 0.5) * (2.0 * factor);
+		
+	 return ::math::normalize(uvw.tangent_u * tangent_space_normal.x +
+		  uvw.tangent_v * tangent_space_normal.y +
+		  ::state::normal()*1.0); 
+}
+
+export material Brass_Scratched(
+    float brass_type_select = 0.f [[
+        ::anno::description("Bends between the Brass types. 0 is yellow brass, 0.33 gold brass and 0.66 red brass. Going from 0.66 to 1.0 wraps back to yellow brass."),
+        ::anno::display_name("Brass Type Blend"),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(0)
+    ]],
+    float roughness = 0.15f [[
+        ::anno::description("Adjusts the roughness of the material"),
+        ::anno::display_name("Roughness"),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(1)
+    ]],
+    float surface_dirt_amount = 0.0f [[
+        ::anno::description("Adds a layer of dirt on the surface which darkens the appearance"),
+        ::anno::display_name("Surface Dirt"),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(2)
+    ]],
+    float bump_strength = 0.f [[
+        ::anno::description("Specifies the strength of the bump"),
+        ::anno::display_name("Bump Strength"),
+        ::anno::in_group("Appearance"),
+        ::anno::hard_range(0.f, 2.f),
+        ::anno::soft_range(0.f, 1.f),
+        ::anno::ui_order(3)
+    ]],
+    float rough_scratches_roughness = 0.3f [[
+        ::anno::description("Increasing this value will increase the roughness of the scratches. The roughness will be calculated relative to the the overall roughness of the metal."),
+        ::anno::display_name("Rough Scratches Roughness"),
+        ::anno::in_group("Appearance", "Scratches Rough"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(4)
+    ]],
+    float rough_scratches_attenuation = 0.97f [[
+        ::anno::description("Increase this value to darken the appearance of rough scratches to give them a dirty, old look"),
+        ::anno::display_name("Rough Scratches Attenuation"),
+        ::anno::in_group("Appearance", "Scratches Rough"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(5)
+    ]],
+    float shiny_scratches_roughness = 0.f [[
+        ::anno::description("Increasing this value will increase the shininess of scratches. The shininess will be calculated relative to the the overall roughness of the metal."),
+        ::anno::display_name("Shiny Scratches Shininess"),
+        ::anno::in_group("Appearance", "Scratches Shiny"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(6)
+    ]],
+    float shiny_scratches_brightness = 0.f [[
+        ::anno::description("Increase this value to brighten the appearance of shiny scratches to make them appear more fresh"),
+        ::anno::display_name("Shiny Scratches Brightness"),
+        ::anno::in_group("Appearance", "Scratches Shiny"),
+        ::anno::hard_range(0.f, 1.f),
+        ::anno::ui_order(7)
+    ]],
+    uniform float2 texture_translate = float2(0.f) [[
+        ::anno::description("Controls the position of the texture"),
+        ::anno::display_name("Texture Translate"),
+        ::anno::in_group("Transform"),
+        ::anno::ui_order(8)
+    ]],
+    uniform float texture_rotate = 0.f [[
+        ::anno::description("Rotates angle of the texture in degrees"),
+        ::anno::display_name("Texture Rotate"),
+        ::anno::in_group("Transform"),
+        ::anno::soft_range(0.f, 360.f),
+        ::anno::ui_order(9)
+    ]],
+    uniform float2 texture_scale = float2(0.5f) [[
+        ::anno::description("Larger numbers increase the size"),
+        ::anno::display_name("Texture Scale"),
+        ::anno::in_group("Transform"),
+        ::anno::ui_order(10)
+    ]],
+    uniform bool roundcorners_enable = false [[
+        ::anno::description("Enables the round cornwer effect. Comes at a slight performance cost as additional raytracing calls are rquired to evaluate the round corner effect"),
+        ::anno::display_name("Enable Round Corners"),
+        ::anno::in_group("Round Corners"),
+        ::anno::ui_order(11)
+    ]],
+    uniform float roundcorners_radius_mm = 1.5f [[
+        ::anno::description("Radius of the rounded corners in millimeters"),
+        ::anno::display_name("Round Corner Radius (mm)"),
+        ::anno::in_group("Round Corners"),
+        ::anno::soft_range(0.f, 10.f),
+        ::anno::ui_order(12)
+    ]],
+    uniform bool roundcorners_across_materials = false [[
+        ::anno::description("Applies the round corner effect across different materials when enabled"),
+        ::anno::display_name("Across Materials"),
+        ::anno::in_group("Round Corners"),
+        ::anno::ui_order(13)
+    ]],
+    uniform int uv_space_index = 0 [[
+        ::anno::description("Uses selected UV space for material"),
+        ::anno::display_name("UV Space Index"),
+        ::anno::in_group("Advanced"),
+        ::anno::hard_range(0, 10),
+        ::anno::ui_order(14)
+    ]])
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Yellow Scratched - Polished Subtle Dark Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "polished", "shiny", "smooth", "yellow", "warm"))
+]]
+ = 
+    let {
+        bool tmp0 = false;
+        material_surface tmp1(::df::weighted_layer(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).x * histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), ::df::custom_curve_layer(0.f, 1.f, 5.35999966f, 1.f, ::df::weighted_layer(0.219999999f, ::df::microfacet_ggx_smith_bsdf((histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))) * (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))), (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))) * (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))), color(1.f, 1.f, 1.f), color(1.f, 1.f, 1.f), ::state::texture_tangent_u(0), ::df::scatter_reflect), ::df::weighted_layer(1.f, ::df::microfacet_ggx_smith_bsdf(::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f) * ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f), ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f) * ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f), color(1.f, 1.f, 1.f), color(1.f, 1.f, 1.f), ::state::texture_tangent_u(0), ::df::scatter_reflect), bsdf(), endless_normal(texture_2d("./textures/scratched_normal.jpg", ::tex::gamma_linear), bump_strength, false, false, ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.5f, 0.5f, 1.f), 3.18999982f)), endless_normal(texture_2d("./textures/scratched_normal.jpg", ::tex::gamma_linear), bump_strength, false, false, ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.5f, 0.5f, 1.f), 3.18999982f)), ::df::tint(nvidia::core_definitions::blend_colors(nvidia::core_definitions::blend_colors(gradient_lookup_smooth(texture_2d("./textures/brass_gradients_yellow_gold_red.png", ::tex::gamma_srgb), ::math::pow(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.179999992f), brass_type_select), color(1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y), ::base::color_layer_multiply, rough_scratches_attenuation).tint, nvidia::core_definitions::blend_colors(gradient_lookup_smooth(texture_2d("./textures/brass_gradients_yellow_gold_red.png", ::tex::gamma_srgb), ::math::pow(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.179999992f), brass_type_select), color(0.655930996f, 0.655930996f, 0.655930996f), ::base::color_layer_screen, shiny_scratches_brightness).tint, ::base::color_layer_blend, float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x).tint, ::df::weighted_layer(0.219999999f, ::df::microfacet_ggx_smith_bsdf((histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))) * (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))), (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))) * (histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 0.170000002f, ::math::lerp(0.399999976f, 0.799999952f, roughness)) + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f))), color(1.f, 1.f, 1.f), color(1.f, 1.f, 1.f), ::state::texture_tangent_u(0), ::df::scatter_reflect), ::df::weighted_layer(1.f, ::df::microfacet_ggx_smith_bsdf(::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f) * ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f), ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f) * ::math::clamp(histogram_range(float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, ::math::lerp(0.0700000003f, 0.75999999f, roughness), ::math::lerp(0.0399999991f, 0.349999994f, roughness)) + rough_scratches_roughness * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).y - float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).x * shiny_scratches_roughness + surface_dirt_amount * 0.579999983f * (1.f - histogram_scan_big(histogram_scan_big((1.f - float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).y) * float3(endless_texture(texture_2d("./textures/scratched_multi_R_scratchA_G_scratchB_B_ABblur.jpg", ::tex::gamma_linear), ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.0869999975f, 0.0979999974f, 0.247999996f), 3.18999982f, false)).z + float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z, 1.f, surface_dirt_amount * 0.579999983f), 0.289999992f, 0.479999989f)), 0.f, 1.f), color(1.f, 1.f, 1.f), color(1.f, 1.f, 1.f), ::state::texture_tangent_u(0), ::df::scatter_reflect), bsdf(), endless_normal(texture_2d("./textures/scratched_normal.jpg", ::tex::gamma_linear), bump_strength, false, false, ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.5f, 0.5f, 1.f), 3.18999982f)), endless_normal(texture_2d("./textures/scratched_normal.jpg", ::tex::gamma_linear), bump_strength, false, false, ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.5f, 0.5f, 1.f), 3.18999982f))), ::state::normal()), ::df::diffuse_reflection_bsdf(nvidia::core_definitions::blend_colors(color(0.00489600003f, 0.00409199996f, 0.00365399988f), color(0.0196070001f, 0.015904f, 0.012565f), ::base::color_layer_blend, float3(endless_texture(texture_2d("./textures/scratched_multi_R_dents_G_crust_B_rough.jpg", ::tex::gamma_linear), vmat_transform(texture_translate, texture_rotate, texture_scale, ::base::texture_coordinate_uvw, uv_space_index), 6.08999968f, float3(0.930999994f, 0.505999982f, 0.442999989f), 3.18999982f, false)).z).tint, 0.f), endless_normal(texture_2d("./textures/scratched_normal.jpg", ::tex::gamma_linear), bump_strength, false, false, ::base::coordinate_source(::base::texture_coordinate_uvw, 0), 6.08999968f, float3(0.5f, 0.5f, 1.f), 3.18999982f)), material_emission(emission: edf(), intensity: color(0.f, 0.f, 0.f), mode: intensity_radiant_exitance));
+        material_surface tmp2 = material_surface(scattering: bsdf(), emission: material_emission(emission: edf(), intensity: color(0.f, 0.f, 0.f), mode: intensity_radiant_exitance));
+        color tmp3 = color(1.f, 1.f, 1.f);
+        material_volume tmp4 = material_volume(scattering: vdf(), absorption_coefficient: color(0.f, 0.f, 0.f), scattering_coefficient: color(0.f, 0.f, 0.f));
+        material_geometry tmp5(float3(0.f), 1.f, roundcorners_enable ? ::state::rounded_corner_normal(roundcorners_radius_mm * 0.00100000005f, roundcorners_across_materials, 1.f) : ::state::normal());
+    } in
+        material(
+            thin_walled: tmp0,
+            surface: tmp1,
+            backface: tmp2,
+            ior: tmp3,
+            volume: tmp4,
+            geometry: tmp5
+);
+
+// 2
+export material Brass_Scratched_Yellow_Subtle_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Yellow Scratched - Subtle Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Yellow_Subtle_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "yellow", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.0f,
+	roughness:						0.22f,
+	surface_dirt_amount:			0.78f,
+	bump_strength:					0.29f,
+	rough_scratches_roughness:		0.3f,
+	rough_scratches_attenuation:	1.0f,
+	shiny_scratches_roughness:		0.0f,
+	shiny_scratches_brightness:		0.0f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 3
+export material Brass_Scratched_Yellow_Medium_Glossy_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Yellow Scratched - Medium Glossy Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Yellow_Medium_Glossy_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "yellow", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.0f,
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					0.63f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 4
+export material Brass_Scratched_Yellow_Medium_Glossy_Deep_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Yellow Scratched - Medium Glossy Deep Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Yellow_Medium_Glossy_Deep_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "yellow", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.0f,
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 5
+export material Brass_Scratched_Yellow_Heavy_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Yellow Scratched - Heavy Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Yellow_Heavy_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "yellow", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.0f,
+	roughness:						0.64f,
+	surface_dirt_amount:			0.91f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.89f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 6
+export material Brass_Scratched_Gold_Polished_Subtle_Dark_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Polished Subtle Dark Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Gold_Polished_Subtle_Dark_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "polished", "worn", "shiny", "smooth", "gold", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.33f, // gold
+	roughness:						0.64f,
+	surface_dirt_amount:			0.91f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.89f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+
+// 7
+export material Brass_Scratched_Gold_Subtle_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Subtle Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Gold_Subtle_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "gold", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.33f, // gold
+	roughness:						0.22f,
+	surface_dirt_amount:			0.78f,
+	bump_strength:					0.29f,
+	rough_scratches_roughness:		0.3f,
+	rough_scratches_attenuation:	1.0f,
+	shiny_scratches_roughness:		0.0f,
+	shiny_scratches_brightness:		0.0f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 8
+export material Brass_Scratched_Gold_Medium_Glossy_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Medium Glossy Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Gold_Medium_Glossy_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "gold", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.33f, // gold
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					0.63f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 9
+export material Brass_Scratched_Gold_Medium_Glossy_Deep_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Medium Glossy Deep Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Gold_Medium_Glossy_Deep_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "gold", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.33f, // gold
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 10
+export material Brass_Scratched_Gold_Heavy_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Heavy Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Gold_Heavy_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "gold", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.33f, // gold
+	roughness:						0.64f,
+	surface_dirt_amount:			0.91f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.89f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 11
+export material Brass_Scratched_Red_Polished_Subtle_Dark_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Polished Subtle Dark Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Red_Polished_Subtle_Dark_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "polished", "worn", "shiny", "smooth", "red", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.66f, // red
+	roughness:						0.64f,
+	surface_dirt_amount:			0.91f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.89f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+
+// 12
+export material Brass_Scratched_Red_Subtle_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Subtle Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Red_Subtle_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "red", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.66f, // red
+	roughness:						0.22f,
+	surface_dirt_amount:			0.78f,
+	bump_strength:					0.29f,
+	rough_scratches_roughness:		0.3f,
+	rough_scratches_attenuation:	1.0f,
+	shiny_scratches_roughness:		0.0f,
+	shiny_scratches_brightness:		0.0f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 13
+export material Brass_Scratched_Red_Medium_Glossy_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Medium Glossy Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Red_Medium_Glossy_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "red", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.66f, // red
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					0.63f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 14
+export material Brass_Scratched_Red_Medium_Glossy_Deep_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Medium Glossy Deep Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Red_Medium_Glossy_Deep_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "red", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.66f, // red
+	roughness:						0.44f,
+	surface_dirt_amount:			0.6f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.2f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+
+// 15
+export material Brass_Scratched_Red_Heavy_Worn_Scratches(*)
+[[
+	::anno::author("NVIDIA vMaterials"),
+	::anno::contributor("Rüdiger Raab"),
+	::anno::contributor("Maik Rohland"),
+    ::anno::display_name("Brass Gold Scratched - Heavy Worn Scratches"),
+    ::anno::description(DESCRIPTION),
+	::anno::copyright_notice(COPYRIGHT),
+	::anno::thumbnail("./.thumbs/Brass_Scratched.Brass_Scratched_Red_Heavy_Worn_Scratches.png"),
+	// new, worn, aged, dirty, bumped, shiny, rough, matte
+	::anno::key_words(string[]("metal", "brass", "scratched", "reflective", "design", "sanitary", "old", "worn", "shiny", "rough", "red", "warm"))
+]] = Brass_Scratched(
+	brass_type_select:				0.66f, // red
+	roughness:						0.64f,
+	surface_dirt_amount:			0.91f,
+	bump_strength:					1.5f,
+	rough_scratches_roughness:		0.89f,
+	rough_scratches_attenuation:	0.96f,
+	shiny_scratches_roughness:		1.0f,
+	shiny_scratches_brightness:		0.94f,
+	texture_translate:				float2(0.0f),
+	texture_rotate:					0.0f,
+	texture_scale:					float2(1.0f),
+	roundcorners_enable:			false,
+	roundcorners_radius_mm:			1.0,
+	roundcorners_across_materials:	false,
+	uv_space_index: 				0
+);
+
+

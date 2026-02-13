@@ -1,0 +1,5 @@
+cepstral_settings: '"speech/rate=170"'
+cepstral_voice: David
+fade_duration: 0.6
+fade_volume: true
+mode: festival

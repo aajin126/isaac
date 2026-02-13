@@ -1,0 +1,21 @@
+nodes:
+  bl_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: 2000
+      homing_speed: -5093
+  br_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: -3500
+      homing_speed: -5093
+  fl_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: 1400
+      homing_speed: -5093
+  fr_caster_rotation_joint:
+    motor_layer:
+      homing_event: 19
+      homing_offset: 12680
+      homing_speed: -5093

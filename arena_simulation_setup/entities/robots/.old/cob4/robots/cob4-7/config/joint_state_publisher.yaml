@@ -1,0 +1,7 @@
+rate: 100
+source_list:
+- /base/joint_states
+- /torso/joint_states
+- /sensorring/joint_states
+- /arm_left/joint_states
+- /arm_right/joint_states

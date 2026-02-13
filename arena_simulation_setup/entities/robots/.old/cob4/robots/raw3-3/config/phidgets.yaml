@@ -1,0 +1,33 @@
+boards:
+  ifk_general:
+    ratiometric: true
+    sensors:
+      backward:
+        index: 1
+        type: digital_out
+      current:
+        index: 1
+        type: analog
+      em_stop_laser_front:
+        index: 7
+        type: digital_in
+      em_stop_laser_rear:
+        index: 6
+        type: digital_in
+      example1:
+        change_trigger: 10
+        data_rate: 20
+        index: 4
+        type: analog
+      forward:
+        index: 2
+        type: digital_out
+      run:
+        index: 0
+        type: digital_out
+      voltage:
+        index: 0
+        type: analog
+    serial_num: 272849
+frequency: 30
+update_mode: polling

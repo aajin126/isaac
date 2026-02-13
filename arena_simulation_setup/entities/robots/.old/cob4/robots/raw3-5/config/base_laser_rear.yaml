@@ -1,0 +1,9 @@
+angle_resolution: 0.25
+frame_id: base_laser_rear_link
+host: 141.3.80.115
+inverted: true
+scan_frequency: 25
+scan_intervals:
+- - -2.0
+  - 2.0
+set_config: false

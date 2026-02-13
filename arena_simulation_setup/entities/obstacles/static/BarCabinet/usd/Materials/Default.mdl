@@ -1,0 +1,45 @@
+mdl 1.7;
+
+import ::OmniPBR::OmniPBR;
+import ::tex::gamma_mode;
+import ::state::normal;
+
+export material Default(*)
+ = OmniPBR::OmniPBR(
+    diffuse_color_constant: color(0.980392,0.980392,0.980392),
+diffuse_texture: texture_2d(),
+albedo_desaturation: 0.f,
+	albedo_add: 0.f,
+    albedo_brightness: 1.f,
+    diffuse_tint: color(0.980392,0.980392,0.980392),
+    reflection_roughness_constant: 0.000000,
+    reflection_roughness_texture_influence: 0.f,
+	reflectionroughness_texture: texture_2d(),
+	metallic_constant: 0.000000, 
+    metallic_texture_influence: 0.85f,
+metallic_texture: texture_2d(),
+    specular_level: 0.000000,
+    enable_ORM_texture: false,
+    ORM_texture: texture_2d(),
+    ao_to_diffuse: 0.f,
+    ao_texture: texture_2d(),
+	enable_emission: false,
+    emissive_color: color(0.000000,0.000000,0.000000),
+emissive_mask_texture: texture_2d(),
+emissive_intensity: 0.000000,
+	enable_opacity: false, 
+	opacity_constant: 1.000000, 
+	opacity_threshold: float(0.0), 
+	bump_factor: 1.f,
+normalmap_texture: texture_2d(),
+detail_bump_factor: 0.1,
+    detail_normalmap_texture: texture_2d(),
+    project_uvw: false,
+    world_or_object: false,
+    uv_space_index: 0,
+    texture_translate: float2(0.f),
+    texture_rotate: 0.f,
+    texture_scale: float2(1.000000,1.000000),
+    detail_texture_translate: float2(0.f),
+    detail_texture_rotate: 0.f,
+    detail_texture_scale: float2(1.f));

@@ -1,0 +1,109 @@
+bodies:
+- color:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 0.75
+  footprints:
+  - center:
+    - 0
+    - 0
+    collision: false
+    density: 0
+    layers:
+    - static
+    radius: 0.01
+    type: circle
+  name: base
+  pose:
+  - 0
+  - 0
+  - 0
+  type: dynamic
+- color:
+  - 0.66
+  - 0.3
+  - 0
+  - 0.75
+  footprints:
+  - center:
+    - -0.3
+    - 0.0
+    collision: false
+    density: 1
+    layers:
+    - static
+    radius: 0.2
+    type: circle
+  name: left_leg
+  pose:
+  - 0
+  - 0
+  - 0
+  type: dynamic
+- color:
+  - 0.66
+  - 0.3
+  - 0
+  - 0.75
+  footprints:
+  - center:
+    - 0.3
+    - 0.0
+    collision: false
+    density: 1
+    layers:
+    - static
+    radius: 0.2
+    type: circle
+  name: right_leg
+  pose:
+  - 0
+  - 0
+  - 0
+  type: dynamic
+- color:
+  - 0.26
+  - 0.3
+  - 0
+  - 0.3
+  footprints:
+  - center:
+    - 0.0
+    - 0.0
+    collision: false
+    density: 1
+    layers:
+    - static
+    radius: 0.7
+    type: circle
+  name: safety_dist_circle
+  pose:
+  - 0
+  - 0
+  - 0
+  type: dynamic
+plugins:
+- agent_topic: /pedsim_simulator/simulated_agents
+  base_body: base
+  left_leg_body: left_leg
+  leg_offset: 0.38
+  leg_radius: 0.13
+  name: pedsim_movement
+  right_leg_body: right_leg
+  safety_dist: 0.7
+  safety_dist_body: safety_dist_circle
+  step_time: 0.6
+  toggle_leg_movement: true
+  type: PedsimMovement
+  update_rate: 10
+  var_leg_offset: 0.0
+  var_leg_radius: 0.0
+  var_step_time: 0.0
+- body: base
+  ground_truth_pub: dynamic_human
+  name: publish_human_pose
+  odom_frame_id: odom
+  odom_pub: odom
+  pub_rate: 10
+  type: PosePub

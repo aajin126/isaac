@@ -1,0 +1,3 @@
+rate: 100
+source_list:
+- /base/joint_states

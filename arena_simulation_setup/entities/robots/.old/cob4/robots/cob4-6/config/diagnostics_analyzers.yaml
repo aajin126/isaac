@@ -1,0 +1,35 @@
+analyzers:
+  computers:
+    analyzers:
+      b1:
+        contains: b1
+        path: b1
+        type: diagnostic_aggregator/DiscardAnalyzer
+    path: Computers
+    type: diagnostic_aggregator/AnalyzerGroup
+  io:
+    analyzers:
+      joystick:
+        contains: joy
+        path: Joystick
+        type: diagnostic_aggregator/DiscardAnalyzer
+    path: IO
+    type: diagnostic_aggregator/AnalyzerGroup
+  motors:
+    analyzers:
+      base:
+        contains: base/
+        path: Base
+        type: diagnostic_aggregator/GenericAnalyzer
+    path: Actuators
+    type: diagnostic_aggregator/AnalyzerGroup
+  sensors:
+    analyzers:
+      battery:
+        contains: bms
+        path: Battery Status
+        type: diagnostic_aggregator/GenericAnalyzer
+    path: Sensors
+    type: diagnostic_aggregator/AnalyzerGroup
+base_path: ''
+pub_rate: 1.0

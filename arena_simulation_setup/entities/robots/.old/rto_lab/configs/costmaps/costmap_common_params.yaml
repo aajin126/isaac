@@ -1,0 +1,9 @@
+observation_sources: scan
+robot_base_frame: $(arg frame)base_footprint
+robot_radius: 0.225
+scan:
+  clearing: true
+  data_type: LaserScan
+  marking: true
+  sensor_frame: $(arg frame)laser_link
+  topic: $(arg namespace)/scan

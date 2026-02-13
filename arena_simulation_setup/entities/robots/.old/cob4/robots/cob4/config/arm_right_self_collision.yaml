@@ -1,0 +1,16 @@
+self_collision_map:
+  base_link:
+  - arm_right_5_link
+  - arm_right_6_link
+  - arm_right_7_link
+  head_3_link:
+  - arm_right_3_link
+  - arm_right_4_link
+  - arm_right_5_link
+  - arm_right_6_link
+  - arm_right_7_link
+  torso_3_link:
+  - arm_right_4_link
+  - arm_right_5_link
+  - arm_right_6_link
+  - arm_right_7_link

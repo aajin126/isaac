@@ -1,0 +1,11 @@
+baud: 500000
+frame_id: base_laser_rear_link
+inverted: false
+port: /dev/ttyScan1
+publish_frequency: 12
+scan_cycle_time: 0.04
+scan_duration: 0.025
+scan_id: 7
+scan_intervals:
+- - -2.0
+  - 2.0

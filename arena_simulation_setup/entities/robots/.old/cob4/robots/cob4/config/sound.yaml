@@ -1,0 +1,5 @@
+cepstral_settings: '"speech/rate=170"'
+cepstral_voice: David
+fade_duration: 1.0
+fade_volume: true
+mode: cepstral

@@ -1,0 +1,17 @@
+defaults:
+  eds_file: robots/common/Elmo.dcf
+  eds_pkg: cob_hardware_config
+  motor_layer:
+    switching_state: 4
+  vel_from_device: 'v != v ? v=0 : v=smooth(deg2rad(obj606c/1000.0),v,0.3)'
+nodes:
+- dcf_overlay:
+    '6083': '150000'
+    '6084': '150000'
+    60C5: '150000'
+    60C6: '1000000'
+  id: 73
+  name: sensorring_joint
+sync:
+  interval_ms: 10
+  overflow: 0

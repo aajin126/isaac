@@ -1,0 +1,59 @@
+name: "jackal"
+model: "jackal"
+
+robot:
+  usd_path: "/home/ewhaglab/isaac/usd/jackal.usd"
+  prim_path: "/World/Robots/jackal"    
+  base_prim: "base_link"              
+  pose:
+    position: [3.0, 0.0, 0.0]
+    orientation_quat_wxyz: [0.0, 0.0, 0.0, 0.0]
+
+ros:
+  tf_prefix: ""                                    # keep empty if ROS expects plain 'odom'/'base_link'
+  cmd_vel_topic: "/jackal_velocity_controller/cmd_vel"
+  joint_states_topic: "joint_states"
+  publish_clock: true
+  publish_odom: true
+  publish_tf: false                                # If your ROS stack publishes TF (e.g., EKF), keep IsaacSim TF off to avoid duplicates.
+  publish_joint_states: true
+
+
+diff_drive:
+  enabled: true
+
+sensors:
+  lidar:
+    enabled: true
+    frame: "front_laser"          
+    topic_scan: "/front/scan"
+    prim_name: "base_scan"        
+  camera:
+    enabled: true
+    frame: "camera_link"
+    topic_rgb: "/camera/color/image_raw"
+    topic_depth: "/camera/depth/image_raw"
+    topic_info: "/camera/camera_info"
+    prim_name: "camera_link"
+    
+  # Matches control.yaml
+  left_wheel_names: ["front_left_wheel_joint", "rear_left_wheel_joint"]    # :contentReference[oaicite:1]{index=1}
+  right_wheel_names: ["front_right_wheel_joint", "rear_right_wheel_joint"] # :contentReference[oaicite:2]{index=2}
+
+  # For IsaacSim DifferentialController/ArticulationController joint list
+  # (flat list = lefts then rights; uses same velocity command across all named joints)
+  wheel_joints:
+    - "front_left_wheel_joint"
+    - "rear_left_wheel_joint"
+    - "front_right_wheel_joint"
+    - "rear_right_wheel_joint"
+
+  wheel_distance: 0.36                              # control.yaml wheel_separation :contentReference[oaicite:3]{index=3}
+  wheel_radius: 0.098                               # control.yaml wheel_radius :contentReference[oaicite:4]{index=4}
+
+  max_linear_speed: 2.0                             # control.yaml linear.x.max_velocity :contentReference[oaicite:5]{index=5}
+  max_angular_speed: 4.0                            # control.yaml angular.z.max_velocity :contentReference[oaicite:6]{index=6}
+
+frames:
+  odom_frame_id: "odom"                             # :contentReference[oaicite:7]{index=7}
+  base_frame_id: "base_link"                        # :contentReference[oaicite:8]{index=8}

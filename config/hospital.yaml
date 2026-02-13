@@ -1,0 +1,20 @@
+stage_units_in_meters: 1.0
+
+world:
+  usd_path: "/home/ewhaglab/isaac/usd/hospital.usd"   
+  prim_path: "/World/Environment"         
+
+ground_plane:
+  enabled: true
+  size: 100
+
+lighting:
+  dome_light:
+    enabled: true
+    intensity: 1000.0
+    color: [1.0, 1.0, 1.0]
+
+navmesh:
+  enabled: false
+  agent_radius: 35.0
+

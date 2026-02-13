@@ -1,0 +1,47 @@
+actions:
+  continuous:
+    angular_range:
+    - -0.8
+    - 0.8
+    linear_range:
+      x:
+      - -1.1
+      - 1.1
+      y:
+      - -0.2
+      - 0.2
+  discrete:
+  - angular: 0.0
+    linear: 1.1
+    name: move_forward
+  - angular: 0.0
+    linear: -0.15
+    name: move_backward
+  - angular: 0.35
+    linear: 0.15
+    name: turn_left
+  - angular: -0.35
+    linear: 0.15
+    name: turn_right
+  - angular: 0.75
+    linear: 0.0
+    name: turn_strong_left
+  - angular: -0.75
+    linear: 0.0
+    name: turn_strong_right
+  - angular: 0.0
+    linear: 0.0
+    name: stop
+is_holonomic: true
+laser:
+  angle:
+    increment: 0.00872640411
+    max: 3.141505479812622
+    min: -3.141505479812622
+  num_beams: 720
+  range: 29.5
+  update_rate: 10
+robot_base_frame: base_footprint
+robot_model: cob4
+robot_radius: 0.36
+robot_sensor_frame: base_link

@@ -1,0 +1,34 @@
+# Controller manager parameters
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    use_sim_time: true
+
+    # Controller definitions
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+# diff_drive_controller configuration
+diff_drive_controller:
+  ros__parameters:
+    publish_rate: 50.0
+    base_frame_id: robot_base_footprint
+
+    # Joint names from your rbsummit_controller_params.yaml
+    left_wheel_names:
+      - robot_front_left_wheel_joint
+      - robot_back_left_wheel_joint
+    
+    right_wheel_names:
+      - robot_front_right_wheel_joint
+      - robot_back_right_wheel_joint
+
+    # Kinematic parameters from your rbsummit_controller_params.yaml
+    wheel_separation: 0.47  # This is the track_width
+    wheel_radius: 0.1125
+    
+    # Other settings
+    use_stamped_vel: false

@@ -1,0 +1,6 @@
+diagnostics_name: sensorring_cam3d
+hz: 15
+hzerror: 5
+topics:
+- /sensorring_cam3d/rgb/camera_info
+- /sensorring_cam3d/depth/camera_info

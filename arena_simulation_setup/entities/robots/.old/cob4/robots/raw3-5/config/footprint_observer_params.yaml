@@ -1,0 +1,4 @@
+epsilon: 0.01
+farthest_frame: base_link
+footprint_source: /local_costmap_node/costmap
+robot_base_frame: base_link

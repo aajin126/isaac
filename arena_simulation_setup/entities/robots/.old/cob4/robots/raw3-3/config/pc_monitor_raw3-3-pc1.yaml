@@ -1,0 +1,4 @@
+check_core_temps: false
+check_ipmi_tool: false
+enforce_clock_speed: false
+num_cores: 8

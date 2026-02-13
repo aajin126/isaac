@@ -1,0 +1,103 @@
+defaults:
+  dcf_overlay:
+    606A: '1'
+    607F: '240000'
+    '6083': '1000000'
+    '6084': '1000000'
+    '6085': '1000000'
+  eds_file: robots/common/ElmoSimplIQ.dcf
+  eds_pkg: cob_hardware_config
+  motor_allocator: cob_elmo_homing::ElmoMotor402::Allocator
+  motor_layer:
+    monitor_mode: false
+drive_wheel:
+  dcf_overlay: &id001
+    607Bsub1: '-1290240000'
+    607Bsub2: '1290240000'
+    607Dsub1: '-1290240000'
+    607Dsub2: '1290240000'
+  motor_layer: &id002
+    homing_event: 0
+    homing_offset: 0
+    homing_speed: 0
+  pos_from_device: obj6064 * 2 * pi / ( 4096 * 21 * 1)
+  pos_to_device: rint(pos * 4096 * 21 * 1 / (2 * pi))
+  vel_from_device: obj606c * 2 * pi / ( 4096 * 21 * 1)
+  vel_to_device: rint(vel * 4096 * 21 * 1 / (2 * pi))
+heartbeat:
+  msg: 77f#05
+  rate: 20
+nodes:
+  bl_caster_r_wheel_joint:
+    dcf_overlay: *id001
+    id: 4
+    motor_layer: *id002
+    pos_from_device: obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: rint(vel * 4096 * 21 * 1 / (2 * pi))
+  bl_caster_rotation_joint:
+    dcf_overlay: &id003
+      607Bsub1: '-480000000'
+      607Bsub2: '480000000'
+      607Dsub1: '-480000000'
+      607Dsub2: '480000000'
+    id: 3
+    pos_from_device: obj6064 * 2 * pi / ( 8000 * 1 * 4)
+    pos_to_device: rint(pos * 8000 * 1 * 4 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 8000 * 1 * 4)
+    vel_to_device: rint(vel * 8000 * 1 * 4 / (2 * pi))
+  br_caster_r_wheel_joint:
+    dcf_overlay: *id001
+    id: 6
+    motor_layer: *id002
+    pos_from_device: obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: rint(vel * 4096 * 21 * 1 / (2 * pi))
+  br_caster_rotation_joint:
+    dcf_overlay: *id003
+    id: 5
+    pos_from_device: obj6064 * 2 * pi / ( 8000 * 1 * 4)
+    pos_to_device: rint(pos * 8000 * 1 * 4 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 8000 * 1 * 4)
+    vel_to_device: rint(vel * 8000 * 1 * 4 / (2 * pi))
+  fl_caster_r_wheel_joint:
+    dcf_overlay: *id001
+    id: 2
+    motor_layer: *id002
+    pos_from_device: obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: rint(vel * 4096 * 21 * 1 / (2 * pi))
+  fl_caster_rotation_joint:
+    dcf_overlay: *id003
+    id: 1
+    pos_from_device: obj6064 * 2 * pi / ( 8000 * 1 * 4)
+    pos_to_device: rint(pos * 8000 * 1 * 4 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 8000 * 1 * 4)
+    vel_to_device: rint(vel * 8000 * 1 * 4 / (2 * pi))
+  fr_caster_r_wheel_joint:
+    dcf_overlay: *id001
+    id: 8
+    motor_layer: *id002
+    pos_from_device: obj6064 * 2 * pi / ( 4096 * 21 * 1)
+    pos_to_device: rint(pos * 4096 * 21 * 1 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 4096 * 21 * 1)
+    vel_to_device: rint(vel * 4096 * 21 * 1 / (2 * pi))
+  fr_caster_rotation_joint:
+    dcf_overlay: *id003
+    id: 7
+    pos_from_device: obj6064 * 2 * pi / ( 8000 * 1 * 4)
+    pos_to_device: rint(pos * 8000 * 1 * 4 / (2 * pi))
+    vel_from_device: obj606c * 2 * pi / ( 8000 * 1 * 4)
+    vel_to_device: rint(vel * 8000 * 1 * 4 / (2 * pi))
+steer_wheel:
+  dcf_overlay: *id003
+  pos_from_device: obj6064 * 2 * pi / ( 8000 * 1 * 4)
+  pos_to_device: rint(pos * 8000 * 1 * 4 / (2 * pi))
+  vel_from_device: obj606c * 2 * pi / ( 8000 * 1 * 4)
+  vel_to_device: rint(vel * 8000 * 1 * 4 / (2 * pi))
+sync:
+  interval_ms: 20
+  overflow: 0

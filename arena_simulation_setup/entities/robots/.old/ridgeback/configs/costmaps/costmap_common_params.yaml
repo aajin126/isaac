@@ -1,0 +1,26 @@
+footprint:
+- - 0.48
+  - -0.4
+- - 0.48
+  - 0.4
+- - -0.48
+  - 0.4
+- - -0.48
+  - -0.4
+footprint_padding: 0.1
+map_type: costmap
+meter_scoring: true
+observation_sources: scan
+origin_z: 0.0
+publish_voxel_map: false
+robot_base_frame: $(arg frame)base_link
+scan:
+  clearing: true
+  data_type: LaserScan
+  marking: true
+  max_obstacle_height: 2.0
+  min_obstacle_height: -2.0
+  sensor_frame: $(arg frame)front_laser
+  topic: $(arg namespace)/scan
+z_resolution: 1
+z_voxels: 2

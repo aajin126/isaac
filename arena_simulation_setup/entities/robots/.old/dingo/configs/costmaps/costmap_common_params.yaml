@@ -1,0 +1,27 @@
+circumscribed_radius: 0.378
+cost_scaling_factor: 3.0
+footprint:
+- - 0.2755
+  - -0.2585
+- - 0.2755
+  - 0.2585
+- - -0.2755
+  - 0.2585
+- - -0.2755
+  - -0.2585
+inflation_radius: 0.5
+inscribed_radius: 0.378
+map_type: costmap
+observation_sources: scan
+obstacle_range: 5.0
+raytrace_range: 5.5
+robot_base_frame: $(arg frame)base_link
+robot_radius: 0.378
+scan:
+  clearing: true
+  data_type: LaserScan
+  marking: true
+  obstacle_range: 2.5
+  raytrace_range: 3.0
+  sensor_frame: $(arg frame)front_laser
+  topic: $(arg namespace)/scan

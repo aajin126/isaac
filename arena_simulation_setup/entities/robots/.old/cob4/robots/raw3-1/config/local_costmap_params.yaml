@@ -1,0 +1,39 @@
+footprint:
+- - 0.52
+  - 0.3
+- - 0.52
+  - -0.3
+- - -0.52
+  - -0.3
+- - -0.52
+  - 0.3
+footprint_padding: 0.02
+global_frame: base_link
+height: 5.0
+obstacle_layer:
+  laser_scan_front:
+    clearing: true
+    data_type: LaserScan
+    marking: true
+    sensor_frame: base_laser_front_link
+    topic: /base_laser_front/scan
+  laser_scan_rear:
+    clearing: true
+    data_type: LaserScan
+    marking: true
+    sensor_frame: base_laser_rear_link
+    topic: /base_laser_rear/scan
+  map_type: costmap
+  max_obstacle_height: 2.0
+  observation_sources: laser_scan_front laser_scan_rear
+  obstacle_range: 3.0
+  raytrace_range: 3.0
+plugins:
+- name: obstacle_layer
+  type: costmap_2d::VoxelLayer
+publish_frequency: 5.0
+resolution: 0.07
+robot_base_frame: base_footprint
+rolling_window: true
+update_frequency: 5.0
+width: 5.0

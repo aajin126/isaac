@@ -1,0 +1,58 @@
+MpcLocalPlannerROS:
+  collision_avoidance:
+    costmap_obstacles_behind_robot_dist: 1.5
+    cutoff_dist: 2.5
+    enable_dynamic_obstacles: false
+    force_inclusion_dist: 0.5
+    include_costmap_obstacles: true
+    min_obstacle_dist: 0.2
+  controller:
+    global_plan_viapoint_sep: 5.5
+    max_global_plan_lookahead_dist: 1.5
+    outer_ocp_iterations: 5
+  footprint_model:
+    is_footprint_dynamic: false
+    type: point
+  grid:
+    type: fd_grid
+    xf_fixed:
+    - true
+    - true
+    - true
+  planning:
+    objective:
+      minimum_time_via_points:
+        orientation_weight: 0.0
+        position_weight: 10.5
+        via_points_ordered: false
+      quadratic_form:
+        control_weights:
+        - 1.0
+        - 1.0
+        state_weights:
+        - 2.0
+        - 2.0
+        - 2.0
+      type: minimum_time
+    terminal_constraint:
+      type: none
+    terminal_cost:
+      quadratic:
+        final_state_weights:
+        - 2.0
+        - 2.0
+        - 2.0
+      type: none
+  robot:
+    type: unicycle
+    unicycle:
+      acc_lim_theta: 3.2
+      acc_lim_x: 2.5
+      dec_lim_x: 0.2
+      max_vel_theta: 1.82
+      max_vel_x: 0.28
+      max_vel_x_backwards: 0.2
+  solver:
+    lsq_lm:
+      iterations: 10
+    type: ipopt

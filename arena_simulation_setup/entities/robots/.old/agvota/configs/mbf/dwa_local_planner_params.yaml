@@ -1,0 +1,27 @@
+DwaLocalPlannerROS:
+  acc_lim_theta: 0.3
+  acc_lim_x: 0.5
+  acc_lim_y: 0.0
+  dwa: true
+  goal_distance_bias: 24.0
+  heading_lookahead: 1.0
+  heading_scoring: false
+  holonomic_robot: false
+  max_vel_theta: 0.4
+  max_vel_trans: 0.5
+  max_vel_x: 0.5
+  max_vel_y: 0.0
+  min_vel_theta: 0.1
+  min_vel_x: -0.5
+  min_vel_y: 0.0
+  occdist_scale: 0.5
+  oscillation_reset_angle: 0.1
+  prune_plan: true
+  publish_cost_grid: true
+  sim_granularity: 0.025
+  sim_time: 2.0
+  stop_time_buffer: 1.0
+  vth_samples: 10
+  vx_samples: 5
+  xy_goal_tolerance: 0.15
+  yaw_goal_tolerance: 0.15

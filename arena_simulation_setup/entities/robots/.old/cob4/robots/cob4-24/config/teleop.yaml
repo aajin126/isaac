@@ -1,0 +1,95 @@
+apply_ramp: false
+axis_pitch: 3
+axis_roll: 4
+axis_vx: 1
+axis_vy: 0
+axis_vz: 5
+axis_yaw: 2
+components:
+  arm_left:
+    joint_velocity:
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    sss_default_target: folded
+    twist_max_velocity:
+    - 0.3
+    - 0.2
+    - 0.3
+    - 0.3
+    - 0.2
+    - 0.3
+    twist_topic_name: /arm_left/twist_controller/command_twist
+    velocity_topic_name: /arm_left/joint_group_velocity_controller/command
+  arm_right:
+    joint_velocity:
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    sss_default_target: folded
+    twist_max_velocity:
+    - 0.3
+    - 0.2
+    - 0.3
+    - 0.3
+    - 0.2
+    - 0.3
+    twist_topic_name: /arm_right/twist_controller/command_twist
+    velocity_topic_name: /arm_right/joint_group_velocity_controller/command
+  base:
+    twist_max_acc:
+    - 0.5
+    - 0.5
+    - 0.7
+    twist_max_velocity:
+    - 0.3
+    - 0.2
+    - 0.3
+    twist_safety_topic_name: /base/collision_velocity_filter/command
+    twist_topic_name: /base/twist_mux/command_teleop_joy
+  gripper_left:
+    sss_default_target: home
+  gripper_right:
+    sss_default_target: home
+  torso:
+    joint_velocity:
+    - 0.05
+    - 0.05
+    sss_default_target: home
+    twist_max_velocity:
+    - 0.3
+    - 0.2
+    - 0.3
+    - 0.3
+    - 0.2
+    - 0.3
+    twist_topic_name: /torso/twist_controller/command_twist
+    velocity_topic_name: /torso/joint_group_velocity_controller/command
+deadman_button: 5
+enable_light: true
+enable_sound: true
+init_button: 9
+joy_num_axes: 6
+joy_num_buttons: 12
+joy_num_modes: 4
+left_indicator_button: 6
+light_action_name: /light_torso/set_light
+mode_switch_button: 8
+right_indicator_button: 7
+right_left_button: 4
+run_button: 7
+run_factor: 2.0
+safety_button: 4
+sound_action_name: /sound/say
+torso_joint1_button: 0
+torso_sss_default_target_button: 1
+torso_twist_button: 1
+up_down_button: 5
