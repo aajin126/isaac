@@ -16,7 +16,10 @@ from isaacsim import SimulationApp
 CONFIG = {"renderer": "Wireframe", "headless": False}
 simulation_app = SimulationApp(CONFIG)
 simulation_app.update()
-
+import omni.kit.app
+from omni.isaac.core.world import World
+from pedestrian.simulator.logic.people_manager import PeopleManager
+from pedestrian.simulator.params import DEFAULT_WORLD_SETTINGS, SIMULATION_ENVIRONMENTS
 from pxr import UsdPhysics, PhysxSchema, Gf, Sdf, UsdGeom
 import carb
 import omni.usd
@@ -155,6 +158,9 @@ def enable_required_extensions():
     extensions.enable_extension("omni.isaac.wheeled_robots")
 
     extensions.enable_extension("isaacsim.sensors.physics")
+    extensions.enable_extension("omni.anim.graph.core")
+    simulation_app.update()
+    simulation_app.update()
     # (optional) navmesh extension if you later need it
     try:
         extensions.enable_extension("omni.anim.navigation.core")
@@ -227,6 +233,66 @@ def build_world(world_cfg: dict):
             raise FileNotFoundError(f"world.usd not found: {world_usd}")
         add_usd_reference(stage, world_prim_path, world_usd)
     simulation_app.update()
+
+# -------------------------
+# Pedestrian support
+# -------------------------
+def spawn_pedestrians(world, pedestrian_cfg: dict) -> list:
+    """
+    Spawn pedestrians based on configuration.
+    
+    Args:
+        world: Isaac Sim world context
+        pedestrian_cfg: Configuration dict with list of pedestrians
+        
+    Returns:
+        list: List of spawned Person objects
+    """
+    from pedestrian.simulator.logic.people.person import Person
+    people = []
+    pedestrians = pedestrian_cfg.get("pedestrians", [])
+    
+    for ped_cfg in pedestrians:
+        try:
+            name = ped_cfg.get("name", "pedestrian_0")
+            character = ped_cfg.get("character", "Female_1")
+            pos = ped_cfg.get("position", [0.0, 0.0, 0.1])
+            yaw = float(ped_cfg.get("yaw", 0.0))
+            target_pos = ped_cfg.get("target_position", [pos])
+            walk_speed = float(ped_cfg.get("walk_speed", 1.0))
+            
+            # Check if character exists
+            try:
+                Person.get_path_for_character_prim(character)
+            except Exception as e:
+                carb.log_warn(f"Character {character} not found for {name}, using default")
+                available = Person.get_character_asset_list()
+                if available:
+                    character = available[0]
+                    carb.log_info(f"Using {character} instead")
+                else:
+                    carb.log_error("No character assets available")
+                    continue
+            
+            # Spawn person
+            person = Person(
+                world=world,
+                stage_prefix=name,
+                character_name=character,
+                init_pos=pos,
+                init_yaw=yaw,
+            )
+            
+            # Set target position
+            person.update_target_position(target_pos, walk_speed)
+            people.append(person)
+            carb.log_info(f"Spawned pedestrian: {name} (character: {character})")
+            
+        except Exception as e:
+            carb.log_error(f"Failed to spawn pedestrian {ped_cfg.get('name', 'unknown')}: {e}")
+            continue
+    
+    return people
 
 # def build_robot_and_ros(robot_cfg: dict):
 #     stage = omni.usd.get_context().get_stage()
@@ -438,6 +504,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--world", required=True, help="path to world.yaml")
     parser.add_argument("--robot", required=True, help="path to robot.yaml")
+    parser.add_argument("--pedestrians", default=None, help="path to pedestrians.yaml (optional)")
     args = parser.parse_args()
 
     enable_required_extensions()
@@ -445,24 +512,31 @@ def main():
     # Create a fresh stage (optional but recommended for repeatability)
     omni.usd.get_context().new_stage()
     simulation_app.update()
-
+    from pedestrian.simulator.logic.people.person import Person
     world_cfg = load_yaml(args.world)
     robot_cfg = load_yaml(args.robot)
-
-    # Simulation context (no World used)
+    pedestrian_cfg = load_yaml(args.pedestrians) if args.pedestrians else {}
+    
+    # Simulation context
     stage_units = float(world_cfg.get("stage_units_in_meters", 1.0))
     sim_context = SimulationContext(stage_units_in_meters=stage_units)
-
+    world = World(stage_units_in_meters=stage_units)
+    
     # Build
     build_world(world_cfg)
     build_robot_and_ros(robot_cfg)
+    sim_context.reset()
+    # Initialize PeopleManager for NavMesh (optional pedestrians)
+    if pedestrian_cfg.get("pedestrians"):
+        from pedestrian.simulator.logic.people.person import Person
+        people_manager = PeopleManager()
+        people = spawn_pedestrians(sim_context, pedestrian_cfg)
 
-    # Reset sim (safe)
-    try:
-        sim_context.reset()
-    except Exception:
-        pass
+        carb.log_info(f"Spawned {len(people)} pedestrians")
+    else:
+        carb.log_info("No pedestrians configured - skipping pedestrian support")
 
+    sim_context.play()
     # Main loop
     while simulation_app.is_running():
         simulation_app.update()

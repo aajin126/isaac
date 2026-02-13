@@ -60,10 +60,10 @@ class Jackal:
                 
                 # ArticulationController
                 ("ArticulationController.inputs:targetPrim", self.prim_path),
-                ("ConstantToken0.inputs:value",'front_wheel_left_joint'),
-                ("ConstantToken1.inputs:value",'front_wheel_right_joint'),
-                ("ConstantToken2.inputs:value",'rear_wheel_left_joint'),
-                ("ConstantToken3.inputs:value",'rear_wheel_right_joint'),
+                ("ConstantToken0.inputs:value",'front_left_wheel_link'),
+                ("ConstantToken1.inputs:value",'front_right_wheel_link'),
+                ("ConstantToken2.inputs:value",'rear_left_wheel_link'),
+                ("ConstantToken3.inputs:value",'rear_right_wheel_link'),
 
             ],
             
