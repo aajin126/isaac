@@ -1,0 +1,12 @@
+Character Idle
+Character GoTo 3.500 0.000 0.000 0
+Character GoTo 5.000 -10.000 0.000 0
+Character GoTo 4.000 5.000 0.000 0
+Character_01 Idle
+Character_01 GoTo 3.500 7.000 0.000 0
+Character_01 GoTo 2.500 -5.000 0.000 0
+Character_01 GoTo 2.000 15.000 0.000 0
+Character_02 Idle
+Character_02 GoTo 0.000 -10.000 0.000 0
+Character_02 GoTo 3.000 3.000 0.000 0
+Character_02 GoTo 4.000 10.000 0.000 0

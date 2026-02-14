@@ -41,7 +41,7 @@ from isaac_utils.robot_graphs import assign_robot_model
 from omni.isaac.core.prims import XFormPrim
 from pxr import UsdGeom
 import omni.replicator.core as rep
-from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_set_up,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar 
+from isaac_utils.sensors import imu_setup,publish_imu, contact_sensor_setup, publish_contact_sensor_info, camera_setup,publish_camera_tf,publish_depth,publish_camera_info,publish_pointcloud_from_depth,publish_rgb, lidar_setup,publish_lidar
 extensions.enable_extension("isaacsim.ros2.bridge")
 
 class NavigationController(Node):
@@ -146,26 +146,23 @@ usd_path="/home/ubuntu/arena4_ws/src/arena/isaac/robot_models/waffle.usd",
 semantic_label="waffle",
 )
 camera_prim_path = prim_path + "/camera_link" 
-camera = camera_set_up(camera_prim_path, "Camera")
-camera.initialize()
-publish_camera_info(name, camera, 20)
-publish_depth(name, camera, 20)
-publish_rgb(name, camera, 20)
-publish_pointcloud_from_depth(name, camera, 20)
-publish_camera_tf(name,prim_path,camera)
-
+    camera = camera_setup(camera_prim_path, "Camera")
+    camera.initialize()
+    publish_camera_info(camera, 20)
+    publish_depth(camera, 20)
+    publish_rgb(camera, 20)
+    publish_pointcloud_from_depth(camera, 20)
+    publish_camera_tf(camera)
 lidar_prim_path = prim_path + "/base_scan"
 lidar = lidar_setup(lidar_prim_path, "Lidar")
-publish_lidar(name, prim_path, lidar)
-
-links = ["wheel_left_link","wheel_right_link"]
+    publish_lidar(prim_path=prim_path, lidar=lidar)
 for link in links:
     imu_prim_path = prim_path + "/" + link + "/" + "IMU"
     contact_prim_path = prim_path + "/" + link + "/" + "ContactSensor"
-    imu = imu_setup(imu_prim_path)
+    imu = imu_setup(imu_prim_path, "IMU")
     contact_sensor = contact_sensor_setup(contact_prim_path)
-    publish_contact_sensor_info(name,prim_path,link,contact_sensor)
-    publish_imu(name,prim_path,link,imu)
+    publish_contact_sensor_info(prim_path=prim_path, link=link, contact_sensor=contact_sensor)
+    publish_imu(prim_path=prim_path, link=link, imu=imu)
     
 model = assign_robot_model(name,prim_path,"waffle")
 model.control_and_publish_joint_states()

@@ -6,13 +6,14 @@ from omni.isaac.core.articulations import Articulation
 from omni.isaac.sensor import Camera, ContactSensor, IMUSensor, LidarRtx
 import omni.replicator.core as rep
 import omni.syntheticdata._syntheticdata as sd
-import omni.isaac.core.utils.numpy.rotations as rot_utils
+import isaacsim.core.utils.numpy.rotations as rot_utils
 import omni.kit.commands as commands
-from omni.isaac.core.utils.prims import is_prim_path_valid, get_prim_at_path
+from isaacsim.core.utils.prims import is_prim_path_valid, get_prim_at_path
 extensions.enable_extension("isaacsim.ros2.bridge")
 from pxr import Gf
 from isaacsim.ros2.bridge import read_camera_info
 import numpy as np
+import omni.usd
 
 #Lidar
 # def lidar_setup(prim_path, name):
@@ -23,15 +24,16 @@ import numpy as np
 #     config="Example_Rotary",
 #     )
 #     return lidar
-def lidar_setup(prim_path, name):
+
+def rtx_lidar_setup(prim_path, name):
     path = prim_path + "/" + name
-    _, _prim = commands.execute(
+    _, lidar = commands.execute(
         "IsaacSensorCreateRtxLidar",
         path=path,
         parent=None,
         config="Example_Rotary_2D",
-        translation=(0.16, 0, 0.3),
-        orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
+        #translation=(0.16, 0, 0.3),
+        #orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
     )
     lidar = LidarRtx(prim_path=path)
     try:
@@ -40,7 +42,7 @@ def lidar_setup(prim_path, name):
         pass
     return lidar
 
-def publish_lidar(prim_path, lidar, topic_scan=None, topic_pointcloud=None, frame_id="base_link", context_domain_id: int = 30):
+def publish_rtx_lidar(name,prim_path,lidar):
     lidar_prim_path = lidar.prim_path
     keys = og.Controller.Keys
     (graph_handle, nodes, _, _) = og.Controller.edit(
@@ -54,25 +56,30 @@ def publish_lidar(prim_path, lidar, topic_scan=None, topic_pointcloud=None, fram
                 ("LidarPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
                 ("readSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 ("LidarPointCloudPublisher", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("publishTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
 
 
             ],
+
             keys.SET_VALUES: [
                 ("RenderProduct.inputs:cameraPrim", lidar_prim_path),
-                ("Context.inputs:domain_id", int(context_domain_id)),
-                ("LidarPublisher.inputs:topicName", str(topic_scan) if topic_scan is not None else "lidar_scan"),
-                ("LidarPublisher.inputs:frameId", str(frame_id)),               
-                ("LidarPublisher.inputs:type", f"laser_scan"),
-                ("LidarPointCloudPublisher.inputs:frameId", str(frame_id)),               
-                ("LidarPointCloudPublisher.inputs:topicName", str(topic_pointcloud) if topic_pointcloud is not None else "lidar_point_cloud"),
-                ("LidarPointCloudPublisher.inputs:type", f"point_cloud"),
+                ("LidarPublisher.inputs:topicName", f"{name}/lidar_scan"),
+                ("LidarPublisher.inputs:frameId", "sick_lms1xx_lidar_frame"),               
+                ("LidarPublisher.inputs:type", "laser_scan"),
+                ("LidarPointCloudPublisher.inputs:frameId", "sick_lms1xx_lidar_frame"),               
+                ("LidarPointCloudPublisher.inputs:topicName", f"{name}/lidar_point_cloud"),
+                ("LidarPointCloudPublisher.inputs:type", "point_cloud"),
+
 
             ],
             keys.CONNECT: [
                 ("OnPlaybackTick.outputs:tick", "RunOnce.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "publishTF.inputs:execIn"),
+                ("readSimTime.outputs:simulationTime", "publishTF.inputs:timeStamp"),
                 ("RenderProduct.outputs:execOut","LidarPublisher.inputs:execIn"),
                 ("RenderProduct.outputs:renderProductPath","LidarPublisher.inputs:renderProductPath"),
                 ("Context.outputs:context","LidarPublisher.inputs:context"),
+                ("Context.outputs:context","publishTF.inputs:context"),
                 ("RunOnce.outputs:step", "RenderProduct.inputs:execIn"),
                 ("RenderProduct.outputs:execOut","LidarPointCloudPublisher.inputs:execIn"),
                 ("RenderProduct.outputs:renderProductPath","LidarPointCloudPublisher.inputs:renderProductPath"),
@@ -80,8 +87,6 @@ def publish_lidar(prim_path, lidar, topic_scan=None, topic_pointcloud=None, fram
             ],
         },
     )
-
-
 
     # hydra_texture = rep.create.render_product(lidar.GetPath(), [1, 1], name="Isaac")
 
@@ -92,6 +97,51 @@ def publish_lidar(prim_path, lidar, topic_scan=None, topic_pointcloud=None, fram
     # writer.attach(hydra_texture)
 
     return
+
+def lidar_setup(parent_prim_path, name):
+    path = f"{parent_prim_path}/{name}"
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(path)
+    if not prim or not prim.IsValid():
+        raise RuntimeError(f"Lidar prim not found at {path}")
+    return prim, path
+
+
+def publish_lidar(name, prim_path):
+
+    keys = og.Controller.Keys
+
+    (graph_handle, nodes, _, _) = og.Controller.edit(
+        {"graph_path": f"{prim_path}/Lidar_Graph"},
+        {
+            keys.CREATE_NODES: [
+                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("Context", "isaacsim.ros2.bridge.ROS2Context"),
+                ("ReadLidar", "isaacsim.sensors.physx.IsaacReadLidarBeams"),
+                ("LaserScanPub", "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
+            ],
+
+            keys.SET_VALUES: [
+                ("ReadLidar.inputs:lidarPrim", prim_path),
+                ("LaserScanPub.inputs:topicName", f"{name}/scan"),
+                ("LaserScanPub.inputs:frameId", "sick_lms1xx_lidar_frame"),
+                ("LaserScanPub.inputs:queueSize", 10),
+            ],
+
+            keys.CONNECT: [
+                ("OnPlaybackTick.outputs:tick", "LaserScanPub.inputs:execIn"),
+                ("Context.outputs:context", "LaserScanPub.inputs:context"),
+                ("ReadSimTime.outputs:simulationTime", "LaserScanPub.inputs:timeStamp"),
+                ("ReadLidar.outputs:linearDepthData", "LaserScanPub.inputs:linearDepthData"),
+                ("ReadLidar.outputs:intensitiesData", "LaserScanPub.inputs:intensitiesData"),
+                ("ReadLidar.outputs:numRows", "LaserScanPub.inputs:numRows"),
+                ("ReadLidar.outputs:numCols", "LaserScanPub.inputs:numCols"),
+                ("ReadLidar.outputs:horizontalResolution", "LaserScanPub.inputs:horizontalResolution"),
+            ],
+        },
+    )
+
 
 #Contact Sensor
 def contact_sensor_setup(prim_path):
@@ -169,8 +219,8 @@ def imu_setup(prim_path, name):
     prim_path=prim_path + "/" + name,
     name=name,
     frequency=60,
-    translation=np.array([0, 0, 0]), # or, position=np.array([0, 0, 0]),
-    orientation=np.array([1, 0, 0, 0]),
+    #translation=np.array([0, 0, 0]), # or, position=np.array([0, 0, 0]),
+    #orientation=np.array([1, 0, 0, 0]),
     linear_acceleration_filter_size = 10,
     angular_velocity_filter_size = 10,
     orientation_filter_size = 10,
@@ -178,16 +228,17 @@ def imu_setup(prim_path, name):
     # imu.initialize()
     return imu
 
-def publish_imu(prim_path, link, imu, topic=None, frame_id="imu_link", context_domain_id: int = 30, debug_print: bool = False):
+def publish_imu(name,prim_path,imu):
     imu_sensor_prim_path = imu.prim_path
     og.Controller.edit(
-        {"graph_path": f"{prim_path}/{link}_IMU"},  # Define the graph path
+        {"graph_path": f"{prim_path}/IMU"},  # Define the graph path
         {
             # Create the required nodes
             og.Controller.Keys.CREATE_NODES: [
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
                 ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("IsaacReadIMU", "isaacsim.sensors.physics.IsaacReadIMU"),
+                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 ("ToString", "omni.graph.nodes.ToString"),
                 ("PrintText", "omni.graph.ui_nodes.PrintText"),
                 ("ROS2PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu")
@@ -201,14 +252,15 @@ def publish_imu(prim_path, link, imu, topic=None, frame_id="imu_link", context_d
                 ("IsaacReadIMU.outputs:linAcc", "ROS2PublishImu.inputs:linearAcceleration"),  # Pass linear acceleration
                 ("IsaacReadIMU.outputs:orientation", "ROS2PublishImu.inputs:orientation"),  # Pass orientation
                 ("IsaacReadIMU.outputs:angVel", "ToString.inputs:value"),  # Convert angular velocity for debugging
+                ("ReadSimTime.outputs:simulationTime", "ROS2PublishImu.inputs:timeStamp"),
                 ("ToString.outputs:converted", "PrintText.inputs:text")  # Print IMU data to console
             ],
             # Set the node parameters
             og.Controller.Keys.SET_VALUES: [
-                ("ROS2Context.inputs:domain_id", int(context_domain_id)),  # ROS2 domain ID
+                ("ROS2Context.inputs:domain_id", 1),  # Set the ROS2 domain ID
                 ("IsaacReadIMU.inputs:imuPrim", imu_sensor_prim_path),  # Set the IMU sensor prim path
-                ("ROS2PublishImu.inputs:topicName", str(topic) if topic is not None else f"{link}/imu_data"),
-                ("ROS2PublishImu.inputs:frameId", str(frame_id)),  # Frame ID
+                ("ROS2PublishImu.inputs:topicName", f"{name}/imu_data"),  # ROS2 topic name
+                ("ROS2PublishImu.inputs:frameId", "com_frame"),  # Frame ID for the ROS2 message
                 ("ROS2PublishImu.inputs:publishAngularVelocity", True),  # Enable angular velocity publishing
                 ("ROS2PublishImu.inputs:publishLinearAcceleration", True),  # Enable linear acceleration publishing
                 ("ROS2PublishImu.inputs:publishOrientation", True),  # Enable orientation publishing

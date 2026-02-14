@@ -1,7 +1,7 @@
 name: jackal
 model: jackal
 robot:
-  usd_path: /home/ewhaglab/isaac/usd/jackal.usd
+  usd_path: /home/ewhaglab/isaac/usd/jackal_basic.usd
   prim_path: /World/Robots/jackal
   urdf_path: /home/ewhaglab/isaac/robots/jackal/jackal_description/urdf/jackal.gazebo
   base_prim: base_link
@@ -25,6 +25,7 @@ ros:
   odom_topic: /jackal_velocity_controller/odom
   tf_topic: /tf
   tf_static_topic: /tf_static
+  domain_id: 30
 
 diff_drive:
   enabled: true
@@ -35,19 +36,14 @@ sensors:
   lidar:
     enabled: true
     name: "lidar"
-    parent_prim: "/World/Robots/jackal/base_link"    
-    topic_scan: "/jackal/scan"
-    topic_pointcloud: "/jackal/points"
-    frame_id: "base_link"
-    publish_tf: false
+    parent_prim_path: "/World/Robots/jackal/base_link/sick_lms1xx_lidar_frame"
+    prim_path: "/World/Robots/jackal/base_link/sick_lms1xx_lidar_frame/Lidar"    
 
   imu:
     enabled: true
     name: "imu"
-    prim_path: "/World/Robots/jackal/base_link"                                
-    topic: "/jackal/imu"
-    frame_id: "base_link"
-    debug_print: false
+    parent_prim_path: "/World/Robots/jackal/base_link/com_frame"
+    prim_path: "/World/Robots/jackal/base_link/com_frame/imu_sensor"                                
 
   camera:
     enabled: true

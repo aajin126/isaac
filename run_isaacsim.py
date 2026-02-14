@@ -17,10 +17,22 @@ CONFIG = {"renderer": "Wireframe", "headless": False}
 simulation_app = SimulationApp(CONFIG)
 simulation_app.update()
 import omni.kit.app
-from omni.isaac.core.world import World
-from pedestrian.simulator.logic.people_manager import PeopleManager
-from pedestrian.simulator.params import DEFAULT_WORLD_SETTINGS, SIMULATION_ENVIRONMENTS
-from pxr import UsdPhysics, PhysxSchema, Gf, Sdf, UsdGeom
+from omni.isaac.core.world import World  
+
+# NOTE: switched from legacy `pedestrian` module to `people` extension APIs
+from people.settings import PeopleSettings
+from isaac_utils.utils.assets import get_assets_root_path_safe
+
+# default world settings (previously from pedestrian.simulator.params)
+DEFAULT_WORLD_SETTINGS = {
+    "physics_dt": 1.0 / 250.0,
+    "stage_units_in_meters": 1.0,
+    "rendering_dt": 1.0 / 60.0,
+    "device": "gpu",
+}
+SIMULATION_ENVIRONMENTS = {}
+
+from pxr import UsdPhysics, PhysxSchema, Gf, Sdf, UsdGeom, Usd, UsdSkel
 import carb
 import omni.usd
 from omni.isaac.core.utils import extensions
@@ -38,6 +50,7 @@ from isaac_utils.sensors import (
     publish_camera_info,
     publish_camera_tf,
 )
+#from isaac_utils.pub_pedestrian import publish_pedestrians
 # SimulationContext import (version-safe)
 try:
     from isaacsim.core.api import SimulationContext
@@ -87,53 +100,6 @@ def abs_path(p: str) -> str:
         return p
     return p if os.path.isabs(p) else os.path.abspath(p)
 
-# def load_urdf(robot_cfg: dict) -> str:
-#     urdf_path = abs_path((robot_cfg.get("robot", {}) or {}).get("urdf_path", ""))
-#     if not urdf_path or not os.path.exists(urdf_path):
-#         raise FileNotFoundError(f"robot.urdf_path not found: {urdf_path}")
-#     with open(urdf_path, "r") as f:
-#         return f.read()
-    
-# def spawn_robot(robot_cfg: dict) -> str:
-#     name = robot_cfg.get("name", "jackal")
-#     robot_block = robot_cfg.get("robot", {})
-#     #urdf_path = os.path.abspath(robot_block["urdf_path"])
-#     prim_path = robot_block.get("prim_path", f"/World/Robots/{name}")
-
-#     frames = robot_cfg.get("frames", {})
-#     base_frame = frames.get("base_frame_id", "base_link")
-#     odom_frame = frames.get("odom_frame_id", "odom")
-
-#     pose = robot_block.get("pose", {})
-#     pos = pose.get("position", [0.0, 0.0, 0.0])
-#     quat = pose.get("orientation_quat_wxyz", [3.0, 0.0, 0.0, 0.0])
-
-#     ros = robot_cfg.get("ros", {})
-#     cmd_vel_topic = ros.get("cmd_vel_topic", f"/{name}/cmd_vel")
-
-#     service_name = "/urdf_to_usd" 
-#     service_type = "UrdfToUsd" 
-
-#     # ros2 service call
-#     req_yaml = f"""
-#     name: "{name}"
-#     robot_model: "{robot_cfg.get('model', name)}"
-#     no_localization: false
-#     base_frame: "{base_frame}"
-#     odom_frame: "{odom_frame}"
-#     cmd_vel_topic: "{cmd_vel_topic}"
-#     pose:
-#       position: {{x: {pos[0]}, y: {pos[1]}, z: {pos[2]}}}
-#       orientation: {{w: {quat[0]}, x: {quat[1]}, y: {quat[2]}, z: {quat[3]}}}
-#     """
-#     subprocess.run(
-#         ["ros2", "service", "call", service_name, service_type, req_yaml],
-#         check=True,
-#         text=True,
-#     )
-
-#     return prim_path
-
 # -------------------------
 # Extensions (ROS2 bridge name changed across versions)
 # -------------------------
@@ -149,6 +115,7 @@ def enable_ros2_bridge():
 def enable_required_extensions():
     # Core graph nodes
     extensions.enable_extension("omni.graph.nodes")
+    extensions.enable_extension("omni.graph.scriptnode") 
     extensions.enable_extension("isaacsim.core.nodes")
 
     # ROS2 bridge (version safe)
@@ -159,6 +126,7 @@ def enable_required_extensions():
 
     extensions.enable_extension("isaacsim.sensors.physics")
     extensions.enable_extension("omni.anim.graph.core")
+    extensions.enable_extension("omni.anim.people")
     simulation_app.update()
     simulation_app.update()
     # (optional) navmesh extension if you later need it
@@ -234,162 +202,189 @@ def build_world(world_cfg: dict):
         add_usd_reference(stage, world_prim_path, world_usd)
     simulation_app.update()
 
+
 # -------------------------
 # Pedestrian support
 # -------------------------
+def _get_character_usd_path(character_name: str) -> str | None:
+    """Resolve a character-name -> USD asset path using PeopleSettings.CHARACTER_ASSETS_PATH or Isaac assets."""
+    settings = carb.settings.get_settings()
+    assets_root = settings.get(PeopleSettings.CHARACTER_ASSETS_PATH)
+    if not assets_root:
+        assets_root = get_assets_root_path_safe()
+        assets_root = os.path.join(assets_root, "Isaac/People/Characters")
+
+    # candidate folder on the asset server/local filesystem
+    folder = os.path.join(assets_root, character_name)
+    try:
+        result, props = omni.client.stat(folder)
+        if result != omni.client.Result.OK:
+            return None
+    except Exception:
+        return None
+
+    # find a .usd inside that folder
+    try:
+        result, listing = omni.client.list(folder)
+        if result != omni.client.Result.OK:
+            return None
+        for item in listing:
+            if item.relative_path.endswith(".usd"):
+                return f"{folder}/{item.relative_path}"
+    except Exception:
+        return None
+
+    return None
+
+
+def _configure_people_navmesh(navmesh_cfg: dict):
+    """Set navmesh / avoidance settings (replaces old PeopleManager.rebuild_nav_mesh)."""
+    height = float(navmesh_cfg.get("agent_height", 1.7))
+    radius = float(navmesh_cfg.get("agent_radius", 0.35))
+    exclude_rigid_bodies = bool(navmesh_cfg.get("exclude_rigid_bodies", False))
+    auto_rebake_on_changes = bool(navmesh_cfg.get("auto_rebake_on_changes", False))
+    auto_rebake_delay_seconds = int(navmesh_cfg.get("auto_rebake_delay_seconds", 4))
+    view_nav_mesh = bool(navmesh_cfg.get("view_navmesh", False))
+
+    omni.kit.commands.execute('ChangeSetting', path='/exts/omni.anim.navigation.core/navMesh/config/agentHeight', value=height)
+    omni.kit.commands.execute('ChangeSetting', path='/exts/omni.anim.navigation.core/navMesh/config/agentRadius', value=radius)
+    omni.kit.commands.execute('ChangeSetting', path='/persistent/exts/omni.anim.navigation.core/navMesh/autoRebakeOnChanges', value=auto_rebake_on_changes)
+    omni.kit.commands.execute('ChangeSetting', path='/persistent/exts/omni.anim.navigation.core/navMesh/autoRebakeDelaySeconds', value=auto_rebake_delay_seconds)
+    omni.kit.commands.execute('ChangeSetting', path='/exts/omni.anim.navigation.core/navMesh/config/excludeRigidBodies', value=exclude_rigid_bodies)
+    omni.kit.commands.execute('ChangeSetting', path='/persistent/exts/omni.anim.navigation.core/navMesh/viewNavMesh', value=view_nav_mesh)
+    omni.kit.commands.execute('ChangeSetting', path='/exts/omni.anim.people/navigation_settings/dynamic_avoidance_enabled', value=bool(navmesh_cfg.get('dynamic_avoidance_enabled', True)))
+    omni.kit.commands.execute('ChangeSetting', path='/exts/omni.anim.people/navigation_settings/navmesh_enabled', value=bool(navmesh_cfg.get('navmesh_enabled', True)))
+
+
 def spawn_pedestrians(world, pedestrian_cfg: dict) -> list:
+    """Spawn pedestrians using the `people` extension (CharacterBehavior + NavigationManager).
+
+    - uses PeopleSettings.CHARACTER_PRIM_PATH as the parent prim
+    - writes an on-stage command file (optional) from YAML `target_position` entries and sets PeopleSettings.COMMAND_FILE_PATH
+    - attaches CharacterBehavior to spawned SkelRoot so navigation/avoidance/commands work
     """
-    Spawn pedestrians based on configuration.
-    
-    Args:
-        world: Isaac Sim world context
-        pedestrian_cfg: Configuration dict with list of pedestrians
-        
-    Returns:
-        list: List of spawned Person objects
-    """
-    from pedestrian.simulator.logic.people.person import Person
-    people = []
+    from people.scripts.utils import Utils as PeopleUtils
+
+    people_spawned = []
     pedestrians = pedestrian_cfg.get("pedestrians", [])
-    
+
+    # optional: write a commands file from YAML commands list so CharacterBehavior will pick up commands
+    command_lines = []
+    for ped in pedestrians:
+        name = ped.get("name")
+        # Support both new 'commands' and legacy 'target_position' formats
+        commands_list = ped.get("commands") or []
+        for cmd in commands_list:
+            if isinstance(cmd, dict):
+                # New format: {action: "GoTo", coord: [x,y,z], rotation: "_"}
+                action = cmd.get("action", "").strip()
+                if action == "GoTo":
+                    coord = cmd.get("coord", [])
+                    rotation = cmd.get("rotation", "_")
+                    if len(coord) >= 3:
+                        command_lines.append(f"{name} GoTo {float(coord[0])} {float(coord[1])} {float(coord[2])} {rotation}")
+                elif action in ["Idle", "LookAround", "Sit"]:
+                    # Simple actions without parameters
+                    command_lines.append(f"{name} {action}")
+                else:
+                    carb.log_warn(f"Unknown action '{action}' for {name}")
+
+    # if there are commands, write a local command file and point PeopleSettings.COMMAND_FILE_PATH at it
+    if command_lines:
+        cmd_path_local = os.path.abspath(os.path.join(os.getcwd(), "config", "people_command_file.txt"))
+        os.makedirs(os.path.dirname(cmd_path_local), exist_ok=True)
+        with open(cmd_path_local, "w") as f:
+            f.write("\n".join(command_lines))
+        cmd_uri = f"file://{cmd_path_local}"
+        omni.kit.commands.execute("ChangeSetting", path=PeopleSettings.COMMAND_FILE_PATH, value=cmd_uri)
+        carb.log_info(f"Wrote people command file -> {cmd_uri}")
+
+    # spawn each character USD under the CHARACTER_PRIM_PATH
+    characters_root = carb.settings.get_settings().get(PeopleSettings.CHARACTER_PRIM_PATH) or "/World/Characters"
+    stage = omni.usd.get_context().get_stage()
+
     for ped_cfg in pedestrians:
         try:
             name = ped_cfg.get("name", "pedestrian_0")
-            character = ped_cfg.get("character", "Female_1")
+            character = ped_cfg.get("character")
             pos = ped_cfg.get("position", [0.0, 0.0, 0.1])
             yaw = float(ped_cfg.get("yaw", 0.0))
-            target_pos = ped_cfg.get("target_position", [pos])
-            walk_speed = float(ped_cfg.get("walk_speed", 1.0))
-            
-            # Check if character exists
-            try:
-                Person.get_path_for_character_prim(character)
-            except Exception as e:
-                carb.log_warn(f"Character {character} not found for {name}, using default")
-                available = Person.get_character_asset_list()
-                if available:
-                    character = available[0]
-                    carb.log_info(f"Using {character} instead")
-                else:
-                    carb.log_error("No character assets available")
-                    continue
-            
-            # Spawn person
-            person = Person(
-                world=world,
-                stage_prefix=name,
-                character_name=character,
-                init_pos=pos,
-                init_yaw=yaw,
-            )
-            
-            # Set target position
-            person.update_target_position(target_pos, walk_speed)
-            people.append(person)
-            carb.log_info(f"Spawned pedestrian: {name} (character: {character})")
-            
+
+            usd_path = _get_character_usd_path(character) if character else None
+            if not usd_path:
+                carb.log_warn(f"Character USD for '{character}' not found; attempting fallback list")
+                # list available characters from the configured assets root
+                assets_root = carb.settings.get_settings().get(PeopleSettings.CHARACTER_ASSETS_PATH) or get_assets_root_path_safe()
+                assets_root = os.path.join(assets_root, "Isaac/People/Characters") if "Isaac/People/Characters" not in assets_root else assets_root
+                try:
+                    result, listing = omni.client.list(assets_root)
+                    if result == omni.client.Result.OK and listing:
+                        character = listing[0].relative_path
+                        usd_path = _get_character_usd_path(character)
+                except Exception:
+                    pass
+
+            if not usd_path:
+                carb.log_error(f"No USD found for character '{character}' — skipping spawn for {name}")
+                continue
+
+            prim_path = f"{characters_root}/{name}"
+            add_usd_reference(stage, prim_path, usd_path)
+            set_xform_pose(stage, prim_path, pos, [1.0, 0.0, 0.0, 0.0])
+            carb.log_info(f"Spawned character prim {prim_path} -> {usd_path}")
+
+            # attach CharacterBehavior script to SkelRoot
+            skelroot_prim_path = None
+            root_prim = stage.GetPrimAtPath(characters_root)
+            if root_prim and root_prim.IsValid():
+                for child in root_prim.GetChildren():
+                    if child.GetName() == name:
+                        for p in Usd.PrimRange(child):
+                            if p.GetTypeName() == "SkelRoot":
+                                skelroot_prim_path = p.GetPath()
+                                break
+                        if skelroot_prim_path:
+                            break
+
+            # fallback: search whole stage by prim name
+            if not skelroot_prim_path:
+                for prim in Usd.PrimRange(stage.GetDefaultPrim()):
+                    if prim.GetName() == name:
+                        for p in Usd.PrimRange(prim):
+                            if p.GetTypeName() == "SkelRoot":
+                                skelroot_prim_path = p.GetPath()
+                                break
+                        if skelroot_prim_path:
+                            break
+
+            if skelroot_prim_path:
+                ext_base = omni.kit.app.get_app().get_extension_manager().get_extension_path_by_module("omni.anim.people")
+                script_path = ext_base + "/omni/anim/people/scripts/character_behavior.py"
+                omni.kit.commands.execute("ApplyScriptingAPICommand", paths=[Sdf.Path(skelroot_prim_path)])
+                attr = stage.GetPrimAtPath(skelroot_prim_path).GetAttribute("omni:scripting:scripts")
+                script_list = attr.Get() or []
+                if script_path not in script_list:
+                    script_list.append(script_path)
+                    attr.Set(script_list)
+                carb.log_info(f"Attached CharacterBehavior to {skelroot_prim_path}")
+                people_spawned.append({"name": name, "prim_path": prim_path, "skelroot_path": str(skelroot_prim_path)})
+            else:
+                carb.log_warn(f"SkelRoot for {name} not found — CharacterBehavior not attached")
+                people_spawned.append({"name": name, "prim_path": prim_path})
+
         except Exception as e:
             carb.log_error(f"Failed to spawn pedestrian {ped_cfg.get('name', 'unknown')}: {e}")
             continue
-    
-    return people
 
-# def build_robot_and_ros(robot_cfg: dict):
-#     stage = omni.usd.get_context().get_stage()
+    # debug: list managed characters known to omni.anim.people
+    try:
+        from people.scripts.global_character_position_manager import GlobalCharacterPositionManager
+        mgr = GlobalCharacterPositionManager.get_instance()
+        carb.log_info(f"GlobalCharacterPositionManager entries after spawn: {list(mgr.get_all_managed_characters())}")
+    except Exception:
+        pass
 
-#     name = robot_cfg.get("name", "jackal")
-#     robot_block = robot_cfg.get("robot", {})
-#     robot_usd = abs_path(robot_block.get("usd_path", ""))
-#     robot_prim_path = robot_block.get("prim_path", f"/World/Robots/{name}")
-#     base_prim_name = robot_block.get("base_prim", "base_link")
-
-#     if not robot_usd or not os.path.exists(robot_usd):
-#         raise FileNotFoundError(f"robot.usd not found: {robot_usd}")
-
-#     # Reference the robot USD
-#     add_usd_reference(stage, robot_prim_path, robot_usd)
-
-#     # Set pose on robot root prim
-#     pose = robot_block.get("pose", {})
-#     pos = pose.get("position", [0.0, 0.0, 0.0])
-#     quat = pose.get("orientation_quat_wxyz", [1.0, 0.0, 0.0, 0.0])
-#     set_xform_pose(stage, robot_prim_path, pos, quat)
-
-#     # door manager optional
-#     if door_manager is not None:
-#         try:
-#             door_manager.add_robot(robot_prim_path)
-#         except Exception as e:
-#             carb.log_warn(f"door_manager.add_robot failed: {e}")
-
-#     simulation_app.update()
-
-#     # ROS graph setup
-#     ros = robot_cfg.get("ros", {})
-#     tf_prefix = ros.get("tf_prefix", name)
-#     cmd_vel_topic = ros.get("cmd_vel_topic", f"/{name}/cmd_vel")
-#     joint_states_topic = ros.get("joint_states_topic", f"/{name}/joint_states")
-
-#     publish_clock = bool(ros.get("publish_clock", True))
-#     publish_tf_flag = bool(ros.get("publish_tf", True))
-#     publish_odom_flag = bool(ros.get("publish_odom", True))
-#     publish_js_flag = bool(ros.get("publish_joint_states", True))
-
-#     if publish_clock:
-#         PublishTime("/World/publish_time")
-
-#     base_path = f"{robot_prim_path}/{base_prim_name}"
-
-#     # Odom (raw tf tree) – publish if you want IsaacSim side odom
-#     if publish_odom_flag:
-#         frames = robot_cfg.get("frames", {})
-#         odom_frame_id = frames.get("odom_frame_id", "odom")
-#         base_frame_id = frames.get("base_frame_id", "base_link")
-#         odom(
-#             graph_path=f"{robot_prim_path}/odom_graph",
-#             prim_path=base_path,
-#             base_frame_id=base_frame_id if not tf_prefix else f"{tf_prefix}/{base_frame_id}",
-#             odom_frame_id=odom_frame_id if not tf_prefix else f"{tf_prefix}/{odom_frame_id}",
-#             map_frame_id="map",
-#         )
-
-#     # TF tree – turn OFF if your ROS localization publishes TF already
-#     if publish_tf_flag:
-#         tf(
-#             graph_path=f"{robot_prim_path}/tf_graph",
-#             prim_path=base_path,
-#             tf_prefix=tf_prefix,
-#         )
-
-#     # Joint states
-#     if publish_js_flag:
-#         joint_states(
-#             graph_path=f"{robot_prim_path}/joint_states_graph",
-#             prim_path=base_path,
-#             joint_states_topic=joint_states_topic,
-#         )
-
-#     # cmd_vel -> diff drive
-#     diff = robot_cfg.get("diff_drive", {})
-#     if bool(diff.get("enabled", True)):
-#         differential(
-#             graph_path=f"{robot_prim_path}/diff_drive_graph",
-#             prim_path=robot_prim_path,
-#             cmd_vel_topic=cmd_vel_topic,
-#             joint_names=diff.get("wheel_joints", ["wheel_left_joint", "wheel_right_joint"]),
-#             wheel_distance=float(diff.get("wheel_distance", 0.36)),
-#             wheel_radius=float(diff.get("wheel_radius", 0.098)),
-#             max_linear_speed=float(diff.get("max_linear_speed", 2.0)),
-#             min_linear_speed=0.0,
-#             max_angular_speed=float(diff.get("max_angular_speed", 4.0)),
-#             min_angular_speed=0.0,
-#         )
-
-#     simulation_app.update()
-
-#     urdf_xml_string = load_urdf(robot_cfg)
-#     s = Sensors(prim_path=robot_prim_path, base_topic=ros.get("base_topic", ""))
-#     s.parse_gazebo(urdf_xml_string)
+    return people_spawned
 
 def build_robot_and_ros(robot_cfg: dict):
     stage = omni.usd.get_context().get_stage()
@@ -416,8 +411,20 @@ def build_robot_and_ros(robot_cfg: dict):
     set_xform_pose(stage, robot_prim_path, pos, quat)
 
     simulation_app.update()
+    # determine base_frame_id early so DynamicObstacle attach can use it
+    frames_cfg = robot_block.get("frames", {}) or {}
+    base_frame_id = frames_cfg.get("base_frame_id", "base_link")
 
+    # ensure model_name is defined before using robot_params
     model_name = robot_cfg.get("model", name)
+
+    try:
+        from people.python_ext import add_dynamic_obstacle_behavior_script
+        base_link_prim = f"{robot_prim_path}/{base_frame_id}"
+        add_dynamic_obstacle_behavior_script(base_link_prim)
+        carb.log_info(f"Attached DynamicObstacle to {base_link_prim}")
+    except Exception as e:
+        carb.log_warn(f"Could not attach DynamicObstacle: {e}")
     robot_params = arena_simulation_setup.entities.robot.Robot(model_name).model_params  # :contentReference[oaicite:1]{index=1}
 
     #Jackal OmniGraph
@@ -426,6 +433,14 @@ def build_robot_and_ros(robot_cfg: dict):
     j.control_and_publish_joint_states()
     j.publish_odom_and_tf()
 
+    # Attach DynamicObstacle so omni.anim.people sees the robot as a dynamic obstacle
+    try:
+        from people.python_ext import add_dynamic_obstacle_behavior_script
+        add_dynamic_obstacle_behavior_script(base_link_prim)
+        carb.log_info(f"Attached DynamicObstacle to {base_link_prim}")
+    except Exception as e:
+        carb.log_warn(f"Could not attach DynamicObstacle to {base_link_prim}: {e}")
+ 
     # Sensors
     sensors_cfg = robot_cfg.get("sensors", {}) or {}
     ros_domain_id = int(os.environ.get("ROS_DOMAIN_ID", ros_cfg.get("domain_id", 30)))
@@ -512,7 +527,7 @@ def main():
     # Create a fresh stage (optional but recommended for repeatability)
     omni.usd.get_context().new_stage()
     simulation_app.update()
-    from pedestrian.simulator.logic.people.person import Person
+    # switched to people extension for character behavior and navigation
     world_cfg = load_yaml(args.world)
     robot_cfg = load_yaml(args.robot)
     pedestrian_cfg = load_yaml(args.pedestrians) if args.pedestrians else {}
@@ -520,22 +535,46 @@ def main():
     # Simulation context
     stage_units = float(world_cfg.get("stage_units_in_meters", 1.0))
     sim_context = SimulationContext(stage_units_in_meters=stage_units)
-    world = World(stage_units_in_meters=stage_units)
     
+    # Create World with default settings
+    world_settings = {**DEFAULT_WORLD_SETTINGS}
+    world = World(**world_settings)
+
     # Build
     build_world(world_cfg)
     build_robot_and_ros(robot_cfg)
     sim_context.reset()
-    # Initialize PeopleManager for NavMesh (optional pedestrians)
+
     if pedestrian_cfg.get("pedestrians"):
-        from pedestrian.simulator.logic.people.person import Person
-        people_manager = PeopleManager()
-        people = spawn_pedestrians(sim_context, pedestrian_cfg)
+        # optional persistent settings from YAML
+        assets_root = pedestrian_cfg.get("assets_root")
+        if assets_root:
+            omni.kit.commands.execute("ChangeSetting", path=PeopleSettings.CHARACTER_ASSETS_PATH, value=assets_root)
+            carb.log_info(f"Set PeopleSettings.CHARACTER_ASSETS_PATH -> {assets_root}")
+        character_prim_path = pedestrian_cfg.get("character_prim_path")
+        if character_prim_path:
+            omni.kit.commands.execute("ChangeSetting", path=PeopleSettings.CHARACTER_PRIM_PATH, value=character_prim_path)
+            carb.log_info(f"Set PeopleSettings.CHARACTER_PRIM_PATH -> {character_prim_path}")
 
-        carb.log_info(f"Spawned {len(people)} pedestrians")
-    else:
-        carb.log_info("No pedestrians configured - skipping pedestrian support")
+        # configure navmesh + avoidance using people extension settings
+        navmesh_cfg = pedestrian_cfg.get("navmesh", {})
+        _configure_people_navmesh(navmesh_cfg)
 
+        people = spawn_pedestrians(world, pedestrian_cfg)
+        
+        # Setup pedestrian ROS2 publisher (publishes positions/metadata to /people)
+        # ped_skelroots = [p.get("skelroot_path") for p in people if p.get("skelroot_path")]
+        # if ped_skelroots:
+        #     publish_pedestrians(
+        #         character_prim_paths=ped_skelroots,
+        #         topic_name=pedestrian_cfg.get("ros2_topic", "/people"),
+        #         context_domain_id=30,
+        #         frame_id="world"
+        #     )
+        #     carb.log_info(f"Published {len(ped_skelroots)} pedestrians to ROS2")
+        # else:
+        #     carb.log_warn("No pedestrian SkelRoot paths found for ROS2 publishing")
+    
     sim_context.play()
     # Main loop
     while simulation_app.is_running():

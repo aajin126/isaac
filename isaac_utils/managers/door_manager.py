@@ -115,8 +115,8 @@ class DoorManager:
         if People is not None:
             try:
                 qos_depth = 10
-                controller.create_subscription(People, '/task_generator_node/people', self._people_cb, qos_depth)
-                _log_info('Subscribed to /task_generator_node/people for pedestrian poses')
+                controller.create_subscription(People, '/people', self._people_cb, qos_depth)
+                _log_info('Subscribed to /people for pedestrian poses')
             except Exception as e:
                 _log_warn(f'Failed to subscribe to people topic: {e}')
         else:

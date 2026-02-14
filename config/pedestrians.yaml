@@ -1,45 +1,61 @@
-# Pedestrian Configuration for Isaac Sim
-# This file defines pedestrians to be spawned in the simulation
+# Pedestrian / People Configuration for Isaac Sim
+# This file defines pedestrians (characters) to be spawned using the `people` extension
+# Quick notes:
+# - `people` extension (CharacterBehavior) reads commands from a command file referenced by
+#   PeopleSettings.COMMAND_FILE_PATH. You can set `command_file` below to auto-generate that file.
+# - If you have custom character assets, set `assets_root` to the folder that contains character subfolders.
+# - Navmesh / avoidance options are under the `navmesh` section.
+# - Pedestrian positions are optionally published to ROS2 via `ros2_topic` (uses people_msgs.People format).
+
+# Optional global settings for people extension (will be applied when you pass this YAML to run_isaacsim.py)
+# assets_root: "/path/to/Isaac/People/Characters"  # optional override for PeopleSettings.CHARACTER_ASSETS_PATH
+# command_file: "config/people_command_file.txt"  # optional local command file to populate
+# ros2_topic: "/people"  # ROS2 topic to publish pedestrian positions (uses people_msgs.People)
 
 # List of pedestrians to spawn
 pedestrians:
-  # Pedestrian 1: pedestrian_1 walking from left to right
   - name: "pedestrian_1"
-    character: "male_adult_construction_01_new" 
-    position: [2.0, 0.0, 0.0]
-    yaw: 0.0  # Initial orientation in radians
-    target_position:
-      - [3.5, 0.0, 0.0]
-      - [5.0, -10.0, 0.0]
-      - [7.0, 0.0, 0.0]
-    walk_speed: 0.8
-
-  # Pedestrian 2: pedestrian_2 walking in different path
-  - name: "pedestrian_2"
-    character: "male_adult_construction_03"
-    position: [3.0, 2.0, 0.0]
-    yaw: 1.5707963267948966  # 90 degrees
-    target_position:
-      - [3.5, 7.0, 0.0]
-      - [2.5, -5.0, 0.0]
-      - [2.0, 8.0, 0.0]
-    walk_speed: 0.6
-
-  # Pedestrian 3: pedestrian_3 creating traffic around robot
-  - name: "pedestrian_3"
-    character: "male_adult_construction_05_new"
-    position: [-3.0, 1.0, 0.0]
+    character: "biped_demo" #"male_adult_construction_01_new"
+    position: [3.5, 0.0, 0.1]
     yaw: 0.0
-    target_position:
-      - [0.0, -10.0, 0.0]
-      - [3.0, 3.0, 0.0]
-      - [5.0, 0.0, 0.0]
-    walk_speed: 0.7
+    waypoints:
+      - coord: [3.5, 0.0, 0.0]
+        rotation: 0.0
+      - coord: [5.0, -10.0, 0.0]
+        rotation: 0.0
+      - coord: [4.0, 5.0, 0.0]
+        rotation: 0.0
+
+  - name: "pedestrian_2"
+    character: "biped_demo"
+    position: [3.5, 7.0, 0.1]
+    yaw: 0.0
+    waypoints:
+      - coord: [3.5, 7.0, 0.0]
+        rotation: 0.0
+      - coord: [2.5, -5.0, 0.0]
+        rotation: 0.0
+      - coord: [2.0, 15.0, 0.0]
+        rotation: 0.0
+
+  - name: "pedestrian_3"
+    character: "biped_demo"
+    position: [0.0, -10.0, 0.1]
+    yaw: 0.0
+    waypoints:
+      - coord: [0.0, -10.0, 0.0]
+        rotation: 0.0
+      - coord: [3.0, 3.0, 0.0]
+        rotation: 0.0
+      - coord: [4.0, 10.0, 0.0]
+        rotation: 0.0
+
 
 # NavMesh Settings for pedestrian obstacle avoidance
 navmesh:
   agent_height: 1.7  # Height of pedestrian for navmesh calculation
   agent_radius: 0.31  # Radius for collision avoidance
-  exclude_rigid_bodies: false  # Include robot in obstacle avoidance
+  exclude_rigid_bodies: true  # Include robot in obstacle avoidance
   auto_rebake_on_changes: false  # Build navmesh once at start
-  view_navmesh: false  # Show visualization of navmesh
+  view_navmesh: true  # Show visualization of navmesh
+

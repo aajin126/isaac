@@ -57,7 +57,8 @@ WORLD_SETTINGS = {
         "physics_dt": 1.0 / 250.0,
         "stage_units_in_meters": 1.0,
         "rendering_dt": 1.0 / 60.0,
-        "device": "cpu"
+        "device": "gpu"
     }
 }
 DEFAULT_WORLD_SETTINGS = WORLD_SETTINGS['ros2']
+DEFAULT_WORLD_ENVIRONMENT = "Warehouse with Shelves"

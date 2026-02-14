@@ -1,9 +1,9 @@
 stage_units_in_meters: 1.0
 
 world:
-  usd_path: "/home/ewhaglab/isaac/usd/warehouse_multiple_shelves.usd"   
-  prim_path: "/World/Environment"         
-
+  usd_path: "/home/ewhaglab/isaac/usd/full_warehouse.usd"   
+  prim_path: "/World/Environment"    
+     
 ground_plane:
   enabled: true
   size: 100
@@ -15,6 +15,6 @@ lighting:
     color: [1.0, 1.0, 1.0]
 
 navmesh:
-  enabled: false
+  enabled: true
   agent_radius: 35.0
 
